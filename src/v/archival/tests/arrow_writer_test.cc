@@ -47,7 +47,7 @@ FIXTURE_TEST(parquet_writer_fixture, storage_test_fixture) {
       std::nullopt,
       std::nullopt);
     auto reader = log->make_reader(reader_cfg).get0();
-    datalake::arrow_writing_consumer consumer;
+    datalake::arrow_writing_consumer consumer({"", ""});
     std::shared_ptr<arrow::Table> table
       = reader.consume(std::move(consumer), model::no_timeout).get0();
 

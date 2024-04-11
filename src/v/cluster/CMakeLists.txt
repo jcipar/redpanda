@@ -240,6 +240,7 @@ v_cc_library(
     v::version
     Arrow::arrow_shared
     Parquet::parquet_shared
+    protobuf::libprotobuf
   )
 add_subdirectory(tests)
 add_subdirectory(cloud_metadata/tests)

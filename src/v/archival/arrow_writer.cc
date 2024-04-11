@@ -18,6 +18,21 @@
 #include <memory>
 #include <string_view>
 
+datalake::arrow_writing_consumer::schema_info get_schema() {
+    return {
+      .key_schema = R"schema(
+          syntax = "proto2";
+          package datalake.proto;
+
+          message simple_message {
+            optional string label = 1;
+            optional int32 number = 3;
+          }
+          )schema",
+      .key_message_name = "simple_message",
+    };
+}
+
 ss::future<bool> datalake::write_parquet(
   const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
@@ -41,7 +56,8 @@ ss::future<bool> datalake::write_parquet(
 
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
-    arrow_writing_consumer consumer;
+
+    arrow_writing_consumer consumer(get_schema());
     std::shared_ptr<arrow::Table> table = co_await reader.consume(
       std::move(consumer), model::no_timeout);
     if (table == nullptr) {
@@ -305,7 +321,7 @@ datalake::arrow_writing_consumer::iobuf_to_string(const iobuf& buf) {
     return value;
 }
 
-datalake::arrow_writing_consumer::arrow_writing_consumer() {
+datalake::arrow_writing_consumer::arrow_writing_consumer(schema_info schema) {
     // For now these could be local variables in end_of_stream, but in
     // the future we will have the constructor take a schema argument.
     //
@@ -314,10 +330,15 @@ datalake::arrow_writing_consumer::arrow_writing_consumer() {
     // these columns, and a reader will get an exception trying to read the
     // file.
     _field_key = arrow::field("Key", arrow::utf8());
+    _field_structured_key = arrow::field("StructuredKey", arrow::utf8());
+
     _field_value = arrow::field("Value", arrow::utf8());
     _field_timestamp = arrow::field(
       "Timestamp", arrow::uint64()); // FIXME: timestamp type?
     _field_offset = arrow::field("Offset", arrow::uint64());
     _schema = arrow::schema(
       {_field_key, _field_value, _field_timestamp, _field_offset});
+
+    _structured_key_converter = std::make_shared<proto_to_arrow_converter>(
+      schema.key_schema, schema.key_message_name);
 }

@@ -1,3 +1,4 @@
+#include "archival/protobuf_to_arrow.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -48,7 +49,12 @@ class arrow_writing_consumer {
      * is written.
      */
 public:
-    explicit arrow_writing_consumer();
+    struct schema_info {
+        std::string key_schema;
+        std::string key_message_name;
+    };
+    // This constructor can throw an exception when the schema is invalid.
+    explicit arrow_writing_consumer(schema_info schema);
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
     ss::future<std::shared_ptr<arrow::Table>> end_of_stream();
     std::shared_ptr<arrow::Table> get_table();
@@ -64,12 +70,13 @@ private:
     uint32_t _rows = 0;
     arrow::Status _ok = arrow::Status::OK();
     std::shared_ptr<arrow::Field> _field_key, _field_value, _field_timestamp,
-      _field_offset;
+      _field_offset, _field_structured_key;
     std::shared_ptr<arrow::Schema> _schema;
     arrow::ArrayVector _key_vector;
     arrow::ArrayVector _value_vector;
     arrow::ArrayVector _timestamp_vector;
     arrow::ArrayVector _offset_vector;
+    std::shared_ptr<proto_to_arrow_converter> _structured_key_converter;
 };
 
 } // namespace datalake
