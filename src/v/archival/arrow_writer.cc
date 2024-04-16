@@ -1,3 +1,4 @@
+#include "archival/protobuf_to_arrow.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/remote.h"
@@ -10,6 +11,7 @@
 #include <seastar/util/file.hh>
 
 #include <archival/arrow_writer.h>
+#include <arrow/array/builder_binary.h>
 #include <arrow/scalar.h>
 #include <arrow/type_fwd.h>
 #include <arrow/visitor.h>
@@ -28,8 +30,16 @@ datalake::arrow_writing_consumer::schema_info get_schema() {
             optional string label = 1;
             optional int32 number = 3;
           }
+
+          message twitter_record {
+            optional string Topic = 1;
+            optional string Sentiment = 2;
+            optional uint64 TweetId = 3;
+            optional string TweetText = 4;
+            optional string TweetDate = 5;
+          }
           )schema",
-      .key_message_name = "simple_message",
+      .key_message_name = "twitter_record",
     };
 }
 
@@ -58,8 +68,10 @@ ss::future<bool> datalake::write_parquet(
                                  / topic_name / inner_path;
 
     arrow_writing_consumer consumer(get_schema());
+    std::cerr << "*** Created consumer" << std::endl;
     std::shared_ptr<arrow::Table> table = co_await reader.consume(
       std::move(consumer), model::no_timeout);
+    std::cerr << "*** Consumed log" << std::endl;
     if (table == nullptr) {
         co_return false;
     }
@@ -74,6 +86,7 @@ ss::future<bool> datalake::write_parquet(
           return write_table_to_parquet(table, path);
       });
     co_await thread_worker.stop();
+    std::cerr << "*** Wrote parquet" << std::endl;
     co_return result.ok();
 }
 
@@ -147,7 +160,7 @@ ss::future<cloud_storage::upload_result> datalake::put_parquet_file(
 ss::future<ss::stop_iteration>
 datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     arrow::StringBuilder key_builder;
-    arrow::StringBuilder value_builder;
+    arrow::BinaryBuilder value_builder;
     arrow::UInt64Builder timestamp_builder;
     arrow::UInt64Builder offset_builder;
     if (batch.compressed()) {
@@ -177,6 +190,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
         if (!_ok.ok()) {
             return ss::stop_iteration::yes;
         }
+        _structured_value_converter->add_message(value);
 
         _ok = value_builder.Append(value);
         if (!_ok.ok()) {
@@ -255,6 +269,8 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     _offset_vector.push_back(offset_array);
     _timestamp_vector.push_back(timestamp_array);
 
+    _structured_value_converter->finish_batch();
+
     return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
 }
 
@@ -265,6 +281,7 @@ std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
     if (!_ok.ok()) {
         return nullptr;
     }
+
     // Create a ChunkedArray
     std::shared_ptr<arrow::ChunkedArray> key_chunks
       = std::make_shared<arrow::ChunkedArray>(_key_vector);
@@ -275,10 +292,26 @@ std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
     std::shared_ptr<arrow::ChunkedArray> offset_chunks
       = std::make_shared<arrow::ChunkedArray>(_offset_vector);
 
+    auto structured_value_table = _structured_value_converter->build_table();
+    std::shared_ptr<arrow::ChunkedArray> structured_value_chunks
+      = datalake::table_to_chunked_struct_array(structured_value_table);
+
+    auto schema = arrow::schema({
+      arrow::field("Key", key_chunks->type()),
+      arrow::field("Value", value_chunks->type()),
+      arrow::field("Timestamp", timestamp_chunks->type()),
+      arrow::field("Offset", offset_chunks->type()),
+      arrow::field("StructuredValue", structured_value_chunks->type()),
+    });
+
     // Create a table
     return arrow::Table::Make(
-      _schema,
-      {key_chunks, value_chunks, timestamp_chunks, offset_chunks},
+      schema,
+      {key_chunks,
+       value_chunks,
+       timestamp_chunks,
+       offset_chunks,
+       structured_value_chunks},
       key_chunks->length());
 }
 
@@ -330,15 +363,19 @@ datalake::arrow_writing_consumer::arrow_writing_consumer(schema_info schema) {
     // these columns, and a reader will get an exception trying to read the
     // file.
     _field_key = arrow::field("Key", arrow::utf8());
-    _field_structured_key = arrow::field("StructuredKey", arrow::utf8());
 
-    _field_value = arrow::field("Value", arrow::utf8());
+    _field_value = arrow::field("Value", arrow::binary());
     _field_timestamp = arrow::field(
       "Timestamp", arrow::uint64()); // FIXME: timestamp type?
     _field_offset = arrow::field("Offset", arrow::uint64());
+
+    _structured_value_converter = std::make_shared<proto_to_arrow_converter>(
+      schema.key_schema, schema.key_message_name);
+
+    _field_structured_key = arrow::field(
+      "StructuredKey",
+      arrow::struct_(_structured_value_converter->build_field_vec()));
+
     _schema = arrow::schema(
       {_field_key, _field_value, _field_timestamp, _field_offset});
-
-    _structured_key_converter = std::make_shared<proto_to_arrow_converter>(
-      schema.key_schema, schema.key_message_name);
 }

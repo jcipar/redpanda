@@ -80,6 +80,8 @@ else()
 
     find_package(Arrow REQUIRED)
     find_package(Parquet REQUIRED)
+    find_package(Protobuf REQUIRED)
+    # find_package(libprotobuf REQUIRED)
     rp_test(
       FIXTURE_TEST
      BINARY_NAME parquet_writer
@@ -88,11 +90,11 @@ else()
       v::cluster
        Arrow::arrow_shared
        Parquet::parquet_shared
+      #  protobuf::libprotobuf
      ARGS "-- -c 1"
      LABELS storage
     )
 
-  find_package(Protobuf REQUIRED)
     rp_test(
       UNIT_TEST
       GTEST

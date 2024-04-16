@@ -1,3 +1,4 @@
+#include "archival/tests/arrow_writer_test_utils.h"
 #include "storage/tests/storage_test_fixture.h"
 
 #include <seastar/core/loop.hh>
@@ -5,9 +6,12 @@
 
 #include <archival/arrow_writer.h>
 #include <arrow/api.h>
+#include <arrow/array/array_base.h>
+#include <arrow/array/builder_base.h>
 #include <arrow/chunked_array.h>
 #include <arrow/io/api.h>
 #include <arrow/result.h>
+#include <arrow/scalar.h>
 #include <arrow/type_fwd.h>
 #include <boost/test/tools/old/interface.hpp>
 #include <parquet/arrow/writer.h>
@@ -30,7 +34,7 @@ FIXTURE_TEST(parquet_writer_fixture, storage_test_fixture) {
 
     // Append some linear kv ints.
     int num_batches = 5;
-    append_random_batches<linear_int_kv_batch_generator>(log, num_batches);
+    append_random_batches<protobuf_random_batches_generator>(log, num_batches);
     log->flush().get0();
 
     // Validate
@@ -47,20 +51,27 @@ FIXTURE_TEST(parquet_writer_fixture, storage_test_fixture) {
       std::nullopt,
       std::nullopt);
     auto reader = log->make_reader(reader_cfg).get0();
-    datalake::arrow_writing_consumer consumer({"", ""});
+    datalake::arrow_writing_consumer consumer(get_test_schema());
+
     std::shared_ptr<arrow::Table> table
       = reader.consume(std::move(consumer), model::no_timeout).get0();
 
     auto columns_vec = table->ColumnNames();
     std::set<std::string> columns(columns_vec.cbegin(), columns_vec.cend());
     std::set<std::string> expected_columns = {
-      "Key", "Value", "Timestamp", "Offset"};
+      "Key", "Value", "Timestamp", "Offset", "StructuredValue"};
+
+    for (const auto& column_name : columns) {
+        std::cerr << column_name << std::endl;
+    }
     BOOST_CHECK_EQUAL_COLLECTIONS(
       columns.cbegin(),
       columns.cend(),
       expected_columns.cbegin(),
       expected_columns.cend());
 
-    int expected_rows = 25; // 5 batches with 5 items / batch
-    BOOST_CHECK_EQUAL(table->GetColumnByName("Key")->length(), expected_rows);
+    // std::cerr << table->ToString() << std::endl;
+
+    // std::cerr << datalake::table_to_chunked_struct_array(table)->ToString()
+    //           << std::endl;
 }

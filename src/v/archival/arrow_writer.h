@@ -1,3 +1,5 @@
+#pragma once
+
 #include "archival/protobuf_to_arrow.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
@@ -76,7 +78,7 @@ private:
     arrow::ArrayVector _value_vector;
     arrow::ArrayVector _timestamp_vector;
     arrow::ArrayVector _offset_vector;
-    std::shared_ptr<proto_to_arrow_converter> _structured_key_converter;
+    std::shared_ptr<proto_to_arrow_converter> _structured_value_converter;
 };
 
 } // namespace datalake

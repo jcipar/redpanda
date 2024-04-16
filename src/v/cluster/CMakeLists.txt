@@ -85,6 +85,7 @@ rpcgen(
 
 find_package(Arrow REQUIRED)
 find_package(Parquet REQUIRED)
+find_package(Protobuf REQUIRED)
 v_cc_library(
   NAME cluster
   HDRS
