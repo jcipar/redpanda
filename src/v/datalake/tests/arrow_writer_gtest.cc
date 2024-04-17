@@ -1,5 +1,5 @@
-#include "archival/protobuf_to_arrow.h"
-#include "archival/tests/arrow_writer_test_utils.h"
+#include "datalake/protobuf_to_arrow.h"
+#include "datalake/tests/arrow_writer_test_utils.h"
 #include "test_utils/test.h"
 
 #include <google/protobuf/descriptor.h>
@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
-
+namespace datalake {
 TEST(ArrowWriter, EmptyMessageTest) {
     using namespace datalake;
     test_data test_data;
@@ -101,3 +101,4 @@ TEST(ArrowWriter, NestedMessageTest) {
     // EXPECT_FALSE(true);
     // google::protobuf::ShutdownProtobufLibrary();
 }
+} // namespace datalake

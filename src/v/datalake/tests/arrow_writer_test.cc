@@ -1,10 +1,9 @@
-#include "archival/tests/arrow_writer_test_utils.h"
+#include "datalake/tests/arrow_writer_test_utils.h"
 #include "storage/tests/storage_test_fixture.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/util/defer.hh>
 
-#include <archival/arrow_writer.h>
 #include <arrow/api.h>
 #include <arrow/array/array_base.h>
 #include <arrow/array/builder_base.h>
@@ -14,6 +13,7 @@
 #include <arrow/scalar.h>
 #include <arrow/type_fwd.h>
 #include <boost/test/tools/old/interface.hpp>
+#include <datalake/arrow_writer.h>
 #include <parquet/arrow/writer.h>
 
 #include <cstdint>

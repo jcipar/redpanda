@@ -1,7 +1,7 @@
 #pragma once
 
-#include "archival/protobuf_to_arrow.h"
 #include "cluster/partition.h"
+#include "datalake/protobuf_to_arrow.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/log.h"

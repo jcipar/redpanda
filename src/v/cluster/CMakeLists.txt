@@ -190,7 +190,6 @@ v_cc_library(
     plugin_backend.cc
     ../archival/archival_metadata_stm.cc
     ../archival/archival_policy.cc
-    ../archival/arrow_writer.cc
     ../archival/ntp_archiver_service.cc
     ../archival/probe.cc
     ../archival/types.cc
@@ -203,6 +202,8 @@ v_cc_library(
     ../archival/scrubber.cc
     ../archival/archiver_manager.cc
     ../archival/async_data_uploader.cc
+    ../datalake/arrow_writer.cc
+    ../datalake/protobuf_to_arrow.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc

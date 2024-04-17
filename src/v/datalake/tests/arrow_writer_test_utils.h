@@ -4,8 +4,8 @@
 
 #include <seastar/core/circular_buffer.hh>
 
-#include <archival/arrow_writer.h>
 #include <compression/compression.h>
+#include <datalake/arrow_writer.h>
 #include <google/protobuf/message.h>
 
 #include <cstdlib>

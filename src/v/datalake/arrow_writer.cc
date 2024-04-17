@@ -1,20 +1,20 @@
-#include "archival/protobuf_to_arrow.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
+#include "datalake/protobuf_to_arrow.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/util/file.hh>
 
-#include <archival/arrow_writer.h>
 #include <arrow/array/builder_binary.h>
 #include <arrow/scalar.h>
 #include <arrow/type_fwd.h>
 #include <arrow/visitor.h>
+#include <datalake/arrow_writer.h>
 
 #include <filesystem>
 #include <memory>

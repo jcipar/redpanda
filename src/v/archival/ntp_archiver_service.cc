@@ -13,7 +13,6 @@
 #include "archival/adjacent_segment_merger.h"
 #include "archival/archival_metadata_stm.h"
 #include "archival/archival_policy.h"
-#include "archival/arrow_writer.h"
 #include "archival/logger.h"
 #include "archival/retention_calculator.h"
 #include "archival/scrubber.h"
@@ -33,6 +32,7 @@
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
+#include "datalake/arrow_writer.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -1168,7 +1168,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
                 topic_name,
                 std::filesystem::path(path),
                 _remote,
-                fib, _rtclog);
+                fib,
+                _rtclog);
 
             if (ret == cloud_storage::upload_result::success) {
                 vlog(
