@@ -6,6 +6,7 @@
 
 #include <archival/arrow_writer.h>
 #include <compression/compression.h>
+#include <google/protobuf/message.h>
 
 #include <cstdlib>
 #include <sstream>
@@ -24,95 +25,154 @@ message simple_message {
 message empty_message {
 }
 
+message inner_message_t {
+  optional string inner_label = 1;
+  optional int32 inner_number = 2;
+}
+
 message nested_message {
-  message inner_message_t {
-    optional string label = 1;
-    repeated int32 indices = 2;
-  }
-  optional string words = 1;
-  optional int32 pos_num = 2;
-  optional int32 neg_num = 3;
-  optional string nothing_here = 4;
-  optional inner_message_t inner_message = 5;
-  optional string high_id = 1010;
+  optional string label = 1;
+  optional int32 number = 2;
+  optional inner_message_t inner_message = 3;
 }
 )schema");
 
     std::string test_message_name = "simple_message";
 };
 
-inline std::string generate_message_generic(
-  const std::string& message_type,
-  const std::function<void(google::protobuf::Message*)>& populate_message) {
-    test_data data;
-    google::protobuf::FileDescriptorProto file_descriptor_proto;
-    google::protobuf::compiler::Parser parser;
-    google::protobuf::io::ArrayInputStream proto_input_stream(
-      data.schema.c_str(), data.schema.size());
-    google::protobuf::io::Tokenizer tokenizer(&proto_input_stream, nullptr);
+// TODO: Make this a fixture?
+struct test_message_builder {
+    test_message_builder(test_data data)
+      : _proto_input_stream{data.schema.c_str(), int(data.schema.size())}
+      , _tokenizer{&_proto_input_stream, nullptr} {
+        if (!_parser.Parse(&_tokenizer, &_file_descriptor_proto)) {
+            exit(-1);
+        }
 
-    if (!parser.Parse(&tokenizer, &file_descriptor_proto)) {
-        exit(-1);
+        if (!_file_descriptor_proto.has_name()) {
+            _file_descriptor_proto.set_name("proto_file");
+        }
+
+        // Build a descriptor pool
+        _file_desc = _pool.BuildFile(_file_descriptor_proto);
+        assert(_file_desc != nullptr);
     }
 
-    if (!file_descriptor_proto.has_name()) {
-        file_descriptor_proto.set_name("proto_file");
+    google::protobuf::Message* generate_unserialized_message_generic(
+      const std::string& message_type,
+      const std::function<void(google::protobuf::Message*)>& populate_message) {
+        // Get the message descriptor
+        const google::protobuf::Descriptor* message_desc
+          = _file_desc->FindMessageTypeByName(message_type);
+        assert(message_desc != nullptr);
+
+        // Parse the actual message
+        const google::protobuf::Message* prototype_msg = _factory.GetPrototype(
+          message_desc);
+        assert(prototype_msg != nullptr);
+
+        google::protobuf::Message* mutable_msg = prototype_msg->New();
+        assert(mutable_msg != nullptr);
+        populate_message(mutable_msg);
+
+        return mutable_msg;
     }
 
-    // Build a descriptor pool
-    google::protobuf::DescriptorPool pool;
-    const google::protobuf::FileDescriptor* file_desc = pool.BuildFile(
-      file_descriptor_proto);
-    assert(file_desc != nullptr);
+    std::string generate_message_generic(
+      const std::string& message_type,
+      const std::function<void(google::protobuf::Message*)>& populate_message) {
+        auto msg = generate_unserialized_message_generic(
+          message_type, populate_message);
+        std::string ret = msg->SerializeAsString();
+        delete msg;
+        return ret;
+    }
 
-    // Get the message descriptor
-    const google::protobuf::Descriptor* message_desc
-      = file_desc->FindMessageTypeByName(message_type);
-    assert(message_desc != nullptr);
-
-    // Parse the actual message
-    google::protobuf::DynamicMessageFactory factory;
-    const google::protobuf::Message* prototype_msg = factory.GetPrototype(
-      message_desc);
-    assert(prototype_msg != nullptr);
-
-    google::protobuf::Message* mutable_msg = prototype_msg->New();
-    assert(mutable_msg != nullptr);
-    populate_message(mutable_msg);
-
-    std::string ret = mutable_msg->SerializeAsString();
-    delete mutable_msg;
-    return ret;
-}
+    google::protobuf::FileDescriptorProto _file_descriptor_proto;
+    google::protobuf::compiler::Parser _parser;
+    google::protobuf::io::ArrayInputStream _proto_input_stream;
+    google::protobuf::io::Tokenizer _tokenizer;
+    google::protobuf::DescriptorPool _pool;
+    const google::protobuf::FileDescriptor* _file_desc;
+    google::protobuf::DynamicMessageFactory _factory;
+};
 
 inline std::string generate_empty_message() {
-    return generate_message_generic(
+    test_data test_data;
+    test_message_builder builder(test_data);
+    return builder.generate_message_generic(
       "empty_message", [](google::protobuf::Message* message) {});
 }
 
 inline std::string
 generate_simple_message(const std::string& label, int32_t number) {
-    return generate_message_generic(
+    test_data test_data;
+    test_message_builder builder(test_data);
+    return builder.generate_message_generic(
       "simple_message", [&](google::protobuf::Message* message) {
-          std::cerr << "*** Populating message of type "
-                    << message->GetTypeName() << " with "
-                    << message->GetDescriptor()->field_count() << " fields"
-                    << std::endl;
-
           auto reflection = message->GetReflection();
           // Have to use field indices here because
-          // message->GetReflections()->ListFields() only returns fields that
-          // are actually present in the message;
+          // message->GetReflections()->ListFields() only returns fields
+          // that are actually present in the message;
           for (int field_idx = 0;
                field_idx < message->GetDescriptor()->field_count();
                field_idx++) {
               auto field_desc = message->GetDescriptor()->field(field_idx);
-              std::cerr << "Filling in field " << field_desc->name()
-                        << std::endl;
               if (field_desc->name() == "label") {
                   reflection->SetString(message, field_desc, label);
               } else if (field_desc->name() == "number") {
                   reflection->SetInt32(message, field_desc, number);
+              }
+          }
+      });
+}
+
+inline google::protobuf::Message* generate_inner_message(
+  test_message_builder& builder, const std::string& label, int32_t number) {
+    auto ret = builder.generate_unserialized_message_generic(
+      "inner_message_t", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          // Have to use field indices here because
+          // message->GetReflections()->ListFields() only returns fields
+          // that are actually present in the message;
+          for (int field_idx = 0;
+               field_idx < message->GetDescriptor()->field_count();
+               field_idx++) {
+              auto field_desc = message->GetDescriptor()->field(field_idx);
+              if (field_desc->name() == "inner_label") {
+                  reflection->SetString(message, field_desc, label);
+              } else if (field_desc->name() == "inner_number") {
+                  reflection->SetInt32(message, field_desc, number);
+              }
+          }
+      });
+
+    return ret;
+}
+
+inline std::string
+generate_nested_message(const std::string& label, int32_t number) {
+    test_data test_data;
+    test_message_builder builder(test_data);
+    auto inner = generate_inner_message(builder, "inner: " + label, -number);
+
+    return builder.generate_message_generic(
+      "nested_message", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          // Have to use field indices here because
+          // message->GetReflections()->ListFields() only returns fields
+          // thatare actually present in the message;
+
+          for (int field_idx = 0;
+               field_idx < message->GetDescriptor()->field_count();
+               field_idx++) {
+              auto field_desc = message->GetDescriptor()->field(field_idx);
+              if (field_desc->name() == "label") {
+                  reflection->SetString(message, field_desc, label);
+              } else if (field_desc->name() == "number") {
+                  reflection->SetInt32(message, field_desc, number);
+              } else if (field_desc->name() == "inner_message") {
+                  reflection->SetAllocatedMessage(message, inner, field_desc);
               }
           }
       });

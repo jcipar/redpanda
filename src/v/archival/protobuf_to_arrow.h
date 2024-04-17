@@ -28,15 +28,25 @@ namespace proto_to_arrow_impl {
 class proto_to_array {
 public:
     virtual ~proto_to_array() {}
-    virtual arrow::Status add_value(google::protobuf::Message*, int field_idx)
+
+    // Pure virtual methods
+    virtual arrow::Status
+    add_value(const google::protobuf::Message*, int field_idx)
       = 0;
+
+    /// Return an Arrow field descriptor for this Array. Used for building
+    /// A schema.
+    virtual std::shared_ptr<arrow::Field> field(const std::string& name) = 0;
+
+    /// Return the underlying ArrayBuilder. Used when this is a child of another
+    /// Builder
+    virtual std::shared_ptr<arrow::ArrayBuilder> builder() = 0;
+
+    // Methods with defaults
     virtual arrow::Status finish_batch() { return arrow::Status::OK(); }
     std::shared_ptr<arrow::ChunkedArray> finish() {
         return std::make_shared<arrow::ChunkedArray>(_values);
     }
-
-    virtual std::shared_ptr<arrow::Field> field(const std::string& name) = 0;
-    virtual std::shared_ptr<arrow::ArrayBuilder> builder() = 0;
 
 protected:
     arrow::Status _arrow_status;
@@ -44,15 +54,15 @@ protected:
 };
 
 template<typename ArrowType>
-class proto_to_array_template : public proto_to_array {
+class proto_to_array_scalar : public proto_to_array {
     using BuilderType = arrow::TypeTraits<ArrowType>::BuilderType;
 
 public:
-    proto_to_array_template()
+    proto_to_array_scalar()
       : _builder(std::make_shared<BuilderType>()) {}
 
     arrow::Status
-    add_value(google::protobuf::Message* msg, int field_idx) override {
+    add_value(const google::protobuf::Message* msg, int field_idx) override {
         if (!_arrow_status.ok()) {
             return _arrow_status;
         }
@@ -86,22 +96,23 @@ public:
 
 private:
     template<typename T>
-    void do_add(google::protobuf::Message* /* msg */, int /* field_idx */) {
+    void
+    do_add(const google::protobuf::Message* /* msg */, int /* field_idx */) {
         throw std::runtime_error("Not implemented!");
     }
 
     // Signed integer types
     template<>
-    void
-    do_add<arrow::Int32Type>(google::protobuf::Message* msg, int field_idx) {
+    void do_add<arrow::Int32Type>(
+      const google::protobuf::Message* msg, int field_idx) {
         auto desc = msg->GetDescriptor()->field(field_idx);
         _arrow_status = _builder->Append(
           msg->GetReflection()->GetInt32(*msg, desc));
     }
 
     template<>
-    void
-    do_add<arrow::Int64Type>(google::protobuf::Message* msg, int field_idx) {
+    void do_add<arrow::Int64Type>(
+      const google::protobuf::Message* msg, int field_idx) {
         auto desc = msg->GetDescriptor()->field(field_idx);
         _arrow_status = _builder->Append(
           msg->GetReflection()->GetInt64(*msg, desc));
@@ -112,24 +123,25 @@ private:
     // these to use for Tweet Ids for a demo, but we should not actually include
     // them.
     template<>
-    void
-    do_add<arrow::UInt32Type>(google::protobuf::Message* msg, int field_idx) {
+    void do_add<arrow::UInt32Type>(
+      const google::protobuf::Message* msg, int field_idx) {
         auto desc = msg->GetDescriptor()->field(field_idx);
         _arrow_status = _builder->Append(
           msg->GetReflection()->GetUInt32(*msg, desc));
     }
 
     template<>
-    void
-    do_add<arrow::UInt64Type>(google::protobuf::Message* msg, int field_idx) {
+    void do_add<arrow::UInt64Type>(
+      const google::protobuf::Message* msg, int field_idx) {
         auto desc = msg->GetDescriptor()->field(field_idx);
         _arrow_status = _builder->Append(
           msg->GetReflection()->GetUInt64(*msg, desc));
     }
 
+    // String
     template<>
-    void
-    do_add<arrow::StringType>(google::protobuf::Message* msg, int field_idx) {
+    void do_add<arrow::StringType>(
+      const google::protobuf::Message* msg, int field_idx) {
         auto desc = msg->GetDescriptor()->field(field_idx);
         _arrow_status = _builder->Append(
           msg->GetReflection()->GetString(*msg, desc));
@@ -138,13 +150,127 @@ private:
     std::shared_ptr<BuilderType> _builder;
 };
 
+class proto_to_arrow_struct : public proto_to_array {
+public:
+    explicit proto_to_arrow_struct(
+      const google::protobuf::Descriptor* message_descriptor) {
+        using namespace proto_to_arrow_impl;
+        namespace pb = google::protobuf;
+
+        // Set up child arrays
+        for (int field_idx = 0; field_idx < message_descriptor->field_count();
+             field_idx++) {
+            auto field_desc = message_descriptor->field(field_idx);
+            if (field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT32) {
+                _child_arrays.push_back(
+                  std::make_unique<proto_to_array_scalar<arrow::Int32Type>>());
+            } else if (
+              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
+                _child_arrays.push_back(
+                  std::make_unique<proto_to_array_scalar<arrow::Int64Type>>());
+            } else if (
+              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT32) {
+                _child_arrays.push_back(
+                  std::make_unique<proto_to_array_scalar<arrow::UInt32Type>>());
+            } else if (
+              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT64) {
+                _child_arrays.push_back(
+                  std::make_unique<proto_to_array_scalar<arrow::UInt64Type>>());
+            } else if (
+              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
+                _child_arrays.push_back(
+                  std::make_unique<proto_to_array_scalar<arrow::StringType>>());
+
+            } else if (
+              field_desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_MESSAGE) {
+                auto field_message_descriptor = field_desc->message_type();
+                assert(field_message_descriptor != nullptr);
+                _child_arrays.push_back(std::make_unique<proto_to_arrow_struct>(
+                  field_message_descriptor));
+            } else {
+                throw std::runtime_error(
+                  std::string("Unknown type: ") + field_desc->cpp_type_name());
+            }
+        }
+        // Make Arrow data types
+
+        // This could be combined into a single loop with the one above, but
+        // this seems more readable to me
+        arrow::FieldVector fields;
+        for (int field_idx = 0; field_idx < message_descriptor->field_count();
+             field_idx++) {
+            auto field_desc = message_descriptor->field(field_idx);
+            auto field_name = field_desc->name();
+            fields.push_back(_child_arrays[field_idx]->field(field_name));
+        }
+        _arrow_data_type = arrow::struct_(fields);
+
+        // Make builder
+        std::vector<std::shared_ptr<arrow::ArrayBuilder>> child_builders;
+        // This could also be collapsed into the above loop
+        for (auto& child : _child_arrays) {
+            child_builders.push_back(child->builder());
+        }
+        _builder = std::make_shared<arrow::StructBuilder>(
+          _arrow_data_type, arrow::default_memory_pool(), child_builders);
+    }
+
+    arrow::Status
+    add_value(const google::protobuf::Message* msg, int field_idx) override {
+        if (!_arrow_status.ok()) {
+            return _arrow_status;
+        }
+        auto desc = msg->GetDescriptor()->field(field_idx);
+        auto child_message = &msg->GetReflection()->GetMessage(*msg, desc);
+        for (size_t child_idx = 0; child_idx < _child_arrays.size();
+             child_idx++) {
+            _arrow_status = _child_arrays[child_idx]->add_value(
+              child_message, int(child_idx));
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+        _arrow_status = _builder->Append();
+
+        return _arrow_status;
+    }
+
+    arrow::Status finish_batch() override {
+        if (!_arrow_status.ok()) {
+            return _arrow_status;
+        }
+
+        auto&& builder_result = _builder->Finish();
+        _arrow_status = builder_result.status();
+        std::shared_ptr<arrow::Array> array;
+        if (!_arrow_status.ok()) {
+            return _arrow_status;
+        }
+
+        // Safe because we validated the status after calling `Finish`
+        array = std::move(builder_result).ValueUnsafe();
+        _values.push_back(array);
+
+        return _arrow_status;
+    }
+
+    std::shared_ptr<arrow::Field> field(const std::string& name) override {
+        return arrow::field(name, _arrow_data_type);
+    }
+    std::shared_ptr<arrow::ArrayBuilder> builder() override { return _builder; }
+
+private:
+    std::vector<std::unique_ptr<proto_to_array>> _child_arrays;
+    std::shared_ptr<arrow::DataType> _arrow_data_type;
+    std::shared_ptr<arrow::StructBuilder> _builder;
+};
+
 } // namespace proto_to_arrow_impl
 
 class proto_to_arrow_converter {
 public:
     proto_to_arrow_converter(std::string schema, std::string message_type)
       : _message_type(message_type) {
-        std::cerr << "Initializing with schema: \n" << schema << std::endl;
         initialize_protobuf_schema(schema);
         initialize_arrow_arrays();
     }
@@ -154,14 +280,10 @@ public:
           serialized_message);
         if (message == nullptr) {
             // FIXME: Silently ignoring unparseable messages seems bad.
-            std::cerr << "*** Could not parse message \"" << serialized_message
-                      << "\"" << std::endl;
             return;
         }
-        std::cerr << "*** Parsed message: \"" << serialized_message << "\""
-                  << std::endl;
         add_message_parsed(std::move(message));
-        assert(_builder->Append().ok()); // FIXME: check this, don't assert
+        // assert(_builder->Append().ok()); // FIXME: check this, don't assert
     }
 
     void finish_batch() {
@@ -177,23 +299,11 @@ public:
         for (auto& [field_idx, array] : _arrays) {
             data_arrays.push_back(array->finish());
         }
-        for (const auto& array : data_arrays) {
-            std::cerr << "Built array " << array->ToString() << std::endl;
-        }
         // FIXME: This will fail if we don't have any columns!
         auto table = arrow::Table::Make(
           build_schema(), data_arrays, data_arrays[0]->length());
         return table;
     }
-
-    // std::shared_ptr<arrow::ChunkedArray> build_chunked_array() {
-    //     auto type = arrow::struct_(build_field_vec());
-
-    //     std::vector<std::shared_ptr<arrow::ChunkedArray>> data_arrays;
-    //     for (auto& [field_idx, array] : _arrays) {
-    //         data_arrays.push_back(array->finish());
-    //     }
-    // }
 
     std::vector<std::shared_ptr<arrow::Field>> build_field_vec() {
         const google::protobuf::Descriptor* message_desc
@@ -218,15 +328,10 @@ public:
     add_message_parsed(std::unique_ptr<google::protobuf::Message> message) {
         // TODO(jcipar): Allocating and deallocating the field descriptor array
         // for every message is probably a bad idea.
-        std::cerr << "*** getting reflection for message" << std::endl;
         auto reflection = message->GetReflection();
-        std::cerr << "*** Got reflection" << std::endl;
         std::vector<const google::protobuf::FieldDescriptor*> field_descriptors;
-        std::cerr << "*** Listing fields" << std::endl;
         reflection->ListFields(*message, &field_descriptors);
-        std::cerr << "*** READING FIELDS" << std::endl;
         for (auto& [field_idx, array] : _arrays) {
-            std::cerr << "*** Adding field index " << field_idx << std::endl;
             // TODO: handle this error
             assert(array->add_value(message.get(), field_idx).ok());
         }
@@ -267,37 +372,43 @@ public:
             auto desc = message_desc->field(field_idx);
 
             if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT32) {
-                _arrays[field_idx] = std::make_unique<
-                  proto_to_array_template<arrow::Int32Type>>();
+                _arrays[field_idx]
+                  = std::make_unique<proto_to_array_scalar<arrow::Int32Type>>();
             } else if (desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_INT64) {
-                _arrays[field_idx] = std::make_unique<
-                  proto_to_array_template<arrow::Int64Type>>();
+                _arrays[field_idx]
+                  = std::make_unique<proto_to_array_scalar<arrow::Int64Type>>();
             } else if (
               desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT32) {
                 _arrays[field_idx] = std::make_unique<
-                  proto_to_array_template<arrow::UInt32Type>>();
+                  proto_to_array_scalar<arrow::UInt32Type>>();
             } else if (
               desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_UINT64) {
                 _arrays[field_idx] = std::make_unique<
-                  proto_to_array_template<arrow::UInt64Type>>();
+                  proto_to_array_scalar<arrow::UInt64Type>>();
             } else if (
               desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_STRING) {
                 _arrays[field_idx] = std::make_unique<
-                  proto_to_array_template<arrow::StringType>>();
+                  proto_to_array_scalar<arrow::StringType>>();
+            } else if (
+              desc->cpp_type() == pb::FieldDescriptor::CPPTYPE_MESSAGE) {
+                auto field_message_descriptor = desc->message_type();
+                assert(field_message_descriptor != nullptr);
+                _arrays[field_idx] = std::make_unique<proto_to_arrow_struct>(
+                  field_message_descriptor);
             } else {
                 throw std::runtime_error(
                   std::string("Unknown type: ") + desc->cpp_type_name());
             }
         }
-        std::vector<std::shared_ptr<arrow::ArrayBuilder>> child_builders;
-        for (auto& [field_idx, array] : _arrays) {
-            child_builders.push_back(array->builder());
-        }
+        // std::vector<std::shared_ptr<arrow::ArrayBuilder>> child_builders;
+        // for (auto& [field_idx, array] : _arrays) {
+        //     child_builders.push_back(array->builder());
+        // }
 
-        _builder = std::make_unique<arrow::StructBuilder>(
-          arrow::struct_(build_field_vec()),
-          arrow::default_memory_pool(),
-          child_builders);
+        // _builder = std::make_unique<arrow::StructBuilder>(
+        //   arrow::struct_(build_field_vec()),
+        //   arrow::default_memory_pool(),
+        //   child_builders);
     }
 
     /// Parse the message to a protobuf message.
@@ -319,9 +430,7 @@ public:
         google::protobuf::Message* mutable_msg = prototype_msg->New();
         assert(mutable_msg != nullptr);
 
-        std::cerr << "*** Parsing message " << message << std::endl;
         if (!mutable_msg->ParseFromString(message)) {
-            std::cerr << "*** Could not parse message" << std::endl;
             return nullptr;
         }
         return std::unique_ptr<google::protobuf::Message>(mutable_msg);
@@ -333,7 +442,7 @@ public:
 private:
     const std::string _message_type;
 
-    std::unique_ptr<arrow::StructBuilder> _builder;
+    // std::unique_ptr<arrow::StructBuilder> _builder;
 
     // Protobuf parsing
     // TODO: Figure out which of these need to remain live after the constructor

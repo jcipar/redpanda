@@ -65,3 +65,39 @@ TEST(ArrowWriter, SimpleMessageTest) {
     // EXPECT_FALSE(true);
     // google::protobuf::ShutdownProtobufLibrary();
 }
+
+TEST(ArrowWriter, NestedMessageTest) {
+    using namespace datalake;
+    std::string serialized_message = generate_nested_message(
+      "Hello world", 12345);
+    std::cerr << "*** Serialized message \"" << serialized_message << "\"\n";
+
+    test_data test_data;
+    proto_to_arrow_converter converter(test_data.schema, "nested_message");
+    EXPECT_EQ(converter._arrays.size(), 3);
+    auto parsed_message = converter.parse_message(serialized_message);
+    EXPECT_NE(parsed_message, nullptr);
+    EXPECT_EQ(parsed_message->GetTypeName(), "datalake.proto.nested_message");
+
+    converter.add_message(serialized_message);
+    {
+        converter.add_message(generate_nested_message("I", 1));
+        converter.add_message(generate_nested_message("II", 2));
+        converter.add_message(generate_nested_message("III", 3));
+        converter.add_message(generate_nested_message("IV", 4));
+        converter.add_message(generate_nested_message("V", 5));
+    }
+    converter.finish_batch();
+    // std::cout << converter._arrays[0]->finish()->ToString();
+    // std::cout << converter._arrays[1]->finish()->ToString();
+    std::cout << "Schema: \n"
+              << converter.build_schema()->ToString() << std::endl
+              << std::endl;
+
+    std::cout << "Table: \n"
+              << converter.build_table()->ToString() << std::endl;
+    // std::cout << converter._arrays[3]->finish();
+
+    // EXPECT_FALSE(true);
+    // google::protobuf::ShutdownProtobufLibrary();
+}
