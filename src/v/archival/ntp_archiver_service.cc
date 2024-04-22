@@ -1128,6 +1128,57 @@ split_segment_stream(
       std::move(std::get<0>(res)), std::move(std::get<1>(res)));
 }
 
+// ss::future<cloud_storage::upload_result> put_parquet_file(
+//   const cloud_storage_clients::bucket_name& bucket,
+//   const std::string_view topic_name,
+//   const std::filesystem::path& inner_path,
+//   cloud_storage::remote& remote,
+//   retry_chain_node& rtc,
+//   retry_chain_logger& rtclog) {
+//     std::filesystem::path local_path
+//       = std::filesystem::path("/tmp/parquet_files") / topic_name /
+//       inner_path;
+
+//     std::filesystem::path remote_path = std::filesystem::path(
+//                                           "experimental/parquet_files")
+//                                         / topic_name / inner_path;
+
+//     bool exists = co_await ss::file_exists(local_path.string());
+//     if (!exists) {
+//         vlog(rtclog.error, "Local Parquet file does not exist: {}",
+//         local_path); co_return cloud_storage::upload_result::failed;
+//     }
+
+//     iobuf file_buf;
+//     ss::output_stream<char> iobuf_ostream = make_iobuf_ref_output_stream(
+//       file_buf);
+
+//     try {
+//         co_await ss::util::with_file_input_stream(
+//           local_path,
+//           [&iobuf_ostream](
+//             ss::input_stream<char>& file_istream) -> ss::future<> {
+//               return ss::copy<char>(file_istream, iobuf_ostream);
+//           });
+//         co_await iobuf_ostream.close();
+
+//         auto ret = co_await remote.upload_object(
+//           {.transfer_details
+//            = {.bucket = bucket, .key =
+//            cloud_storage_clients::object_key(remote_path), .parent_rtc =
+//            rtc}, .type = cloud_storage::upload_type::object, .payload =
+//            std::move(file_buf)});
+//         co_return ret;
+//     } catch (...) {
+//         vlog(
+//           rtclog.error,
+//           "Failed to upload parquet file: {} to {}",
+//           local_path,
+//           remote_path);
+//         co_return cloud_storage::upload_result::failed;
+//     }
+// }
+
 ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
   const remote_segment_path& path,
   upload_candidate candidate,
@@ -1143,25 +1194,23 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
     if (datalake::is_datalake_topic(_parent)) {
-        vlog(
-          _rtclog.debug,
-          "Uploading datalake topic {}",
-          model::topic_view(_parent.log()->config().ntp().tp.topic));
+        std::string_view topic_name = model::topic_view(
+          _parent.log()->config().ntp().tp.topic);
+
+        vlog(_rtclog.debug, "Uploading datalake topic {}", topic_name);
         // FIXME: add a return type enum, there are 3 general outcomes:
         // 1. Some kind of error
         // 2. No error, but no data was written
         // 3. Success, and we created a parquet file
         // For now 1 and 2 are treated the same.
         bool write_success = co_await datalake::write_parquet(
+          _parent.log()->config().ntp().tp.topic,
           std::filesystem::path(path),
           _parent.log(),
           candidate.starting_offset,
           candidate.final_offset);
 
         if (write_success) {
-            std::string_view topic_name = model::topic_view(
-              _parent.log()->config().ntp().tp.topic);
-
             cloud_storage::upload_result ret
               = co_await datalake::put_parquet_file(
                 get_bucket_name(),

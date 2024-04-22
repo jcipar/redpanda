@@ -15,13 +15,32 @@
 #include <arrow/type_fwd.h>
 #include <arrow/visitor.h>
 #include <datalake/arrow_writer.h>
+// #include <datalake/schema_registry.h>
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string_view>
 
-datalake::arrow_writing_consumer::schema_info get_schema() {
-    return {
+ss::future<datalake::arrow_writing_consumer::schema_info>
+get_schema(model::topic /* topic */) {
+    // std::string_view topic_name = model::topic_view(topic);
+    // pandaproxy::schema_registry::subject value_subject{
+    //   std::string(topic_name) + "-value"};
+
+    // std::unique_ptr<wasm::schema_registry> schema_registry
+    //   = wasm::schema_registry::make_default(nullptr);
+
+    // auto value_schema = co_await schema_registry->get_subject_schema(
+    //   value_subject, std::nullopt);
+
+    // assert(
+    //   value_schema.schema.type()
+    //   == pandaproxy::schema_registry::schema_type::protobuf);
+
+    // std::string value_schema_string = value_schema.schema.def().raw()();
+
+    co_return datalake::arrow_writing_consumer::schema_info{
       .key_schema = R"schema(
           syntax = "proto2";
           package datalake.proto;
@@ -31,7 +50,7 @@ datalake::arrow_writing_consumer::schema_info get_schema() {
             optional int32 number = 3;
           }
 
-          message twitter_record {
+          message value_message {
             optional string Topic = 1;
             optional string Sentiment = 2;
             optional uint64 TweetId = 3;
@@ -39,11 +58,13 @@ datalake::arrow_writing_consumer::schema_info get_schema() {
             optional string TweetDate = 5;
           }
           )schema",
-      .key_message_name = "twitter_record",
+      // .key_schema = value_schema_string,
+      .key_message_name = "value_message",
     };
 }
 
 ss::future<bool> datalake::write_parquet(
+  model::topic topic,
   const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
@@ -67,7 +88,9 @@ ss::future<bool> datalake::write_parquet(
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
 
-    arrow_writing_consumer consumer(get_schema());
+    auto schema = co_await get_schema(topic);
+
+    arrow_writing_consumer consumer(schema);
     std::cerr << "*** Created consumer" << std::endl;
     std::shared_ptr<arrow::Table> table = co_await reader.consume(
       std::move(consumer), model::no_timeout);

@@ -202,8 +202,8 @@ v_cc_library(
     ../archival/scrubber.cc
     ../archival/archiver_manager.cc
     ../archival/async_data_uploader.cc
-    ../datalake/arrow_writer.cc
-    ../datalake/protobuf_to_arrow.cc
+    # ../datalake/arrow_writer.cc
+    # ../datalake/protobuf_to_arrow.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/cluster_recovery_backend.cc
     cloud_metadata/key_utils.cc
@@ -240,6 +240,8 @@ v_cc_library(
     v::cloud_storage
     v::features
     v::version
+    # v::pandaproxy_schema_registry
+    v::datalake
     Arrow::arrow_shared
     Parquet::parquet_shared
     protobuf::libprotobuf

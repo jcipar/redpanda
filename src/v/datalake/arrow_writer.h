@@ -22,6 +22,7 @@ namespace datalake {
 /** High-level interface to write a log segment out as Parquet.
  */
 ss::future<bool> write_parquet(
+  model::topic topic,
   const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
