@@ -77,6 +77,7 @@
 #include "config/node_config.h"
 #include "config/seed_server.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
@@ -1212,6 +1213,12 @@ void application::wire_up_runtime_services(
           std::ref(audit_mgr));
     }
 
+    if (_dl_schema_registry) {
+        _dl_schema_registry->set_schema_registry(_schema_registry.get());
+    } else {
+        std::cerr << "jcipar can't initialize _dl_schema_registry" << std::endl;
+    }
+
     if (wasm_data_transforms_enabled()) {
         syschecks::systemd_message("Starting wasm runtime").get();
         auto base_runtime = wasm::runtime::create_default(
@@ -1451,6 +1458,10 @@ void application::wire_up_redpanda_services(
       .get();
 
     syschecks::systemd_message("Adding partition manager").get();
+    std::cerr << "jcipar 8. about to set up partition_manager\n";
+
+    _dl_schema_registry = std::make_shared<datalake::schema_registry_reader>();
+
     construct_service(
       partition_manager,
       std::ref(storage),
@@ -1475,7 +1486,11 @@ void application::wire_up_redpanda_services(
       ss::sharded_parameter([] {
           return config::shard_local_cfg()
             .partition_manager_shutdown_watchdog_timeout.bind();
-      }))
+      }),
+      // std::make_shared<datalake::dummy_schema_registry>()
+      // // std::make_shared<datalake::schema_registry_reader>(
+      //   // _schema_registry.get()))
+      _dl_schema_registry)
       .get();
     vlog(_log.info, "Partition manager started");
     construct_service(
@@ -1566,10 +1581,15 @@ void application::wire_up_redpanda_services(
       "legacy_upload_mode_enabled: {}",
       archival_storage_enabled(),
       config::shard_local_cfg().cloud_storage_disable_archiver_manager.value());
+
+    // std::cerr << "jcipar 6. about to set up archiver_manager\n";
+
     if (
       archival_storage_enabled()
       && !config::shard_local_cfg()
             .cloud_storage_disable_archiver_manager.value()) {
+        // std::cerr << "jcipar 7. setting up archiver_manager!\n";
+
         construct_service(
           archiver_manager,
           node_id,
@@ -1589,7 +1609,8 @@ void application::wire_up_redpanda_services(
                 } else {
                     return nullptr;
                 }
-            }))
+            }),
+          std::make_shared<datalake::dummy_schema_registry>())
           .get();
     }
 
@@ -2492,13 +2513,13 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           _proxy_config->pandaproxy_api());
     }
 
-    if (_schema_reg_config && !config::node().recovery_mode_enabled) {
-        _schema_registry->start().get();
-        vlog(
-          _log.info,
-          "Started Schema Registry listening at {}",
-          _schema_reg_config->schema_registry_api());
-    }
+    // if (_schema_reg_config && !config::node().recovery_mode_enabled) {
+    _schema_registry->start().get();
+    vlog(
+      _log.info,
+      "Started Schema Registry listening at {}",
+      _schema_reg_config->schema_registry_api());
+    // }
 
     audit_mgr.invoke_on_all(&security::audit::audit_log_manager::start).get();
 

@@ -178,7 +178,7 @@ generate_nested_message(const std::string& label, int32_t number) {
       });
 }
 
-inline datalake::arrow_writing_consumer::schema_info get_test_schema() {
+inline datalake::schema_info get_test_schema() {
     test_data data;
     return {
       .key_schema = data.schema,

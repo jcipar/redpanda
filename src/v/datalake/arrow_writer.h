@@ -2,6 +2,7 @@
 
 #include "cluster/partition.h"
 #include "datalake/protobuf_to_arrow.h"
+#include "datalake/schema_registry_interface.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "storage/log.h"
@@ -17,6 +18,8 @@
 #include <parquet/arrow/writer.h>
 #include <ssx/thread_worker.h>
 
+#include <memory>
+
 namespace datalake {
 
 /** High-level interface to write a log segment out as Parquet.
@@ -26,7 +29,8 @@ ss::future<bool> write_parquet(
   const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
-  model::offset ending_offset);
+  model::offset ending_offset,
+  std::shared_ptr<schema_registry_interface> schema_registry = nullptr);
 
 /** Low-level wrapper for writing an arrow table to parquet*/
 arrow::Status write_table_to_parquet(
@@ -52,10 +56,6 @@ class arrow_writing_consumer {
      * is written.
      */
 public:
-    struct schema_info {
-        std::string key_schema;
-        std::string key_message_name;
-    };
     // This constructor can throw an exception when the schema is invalid.
     explicit arrow_writing_consumer(schema_info schema);
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);

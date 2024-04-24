@@ -22,6 +22,7 @@
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -43,7 +44,8 @@ partition::partition(
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
-  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
+  std::optional<cloud_storage_clients::bucket_name> read_replica_bucket,
+  std::shared_ptr<datalake::schema_registry_interface> schema_registry)
   : _raft(std::move(r))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _feature_table(feature_table)
@@ -52,7 +54,13 @@ partition::partition(
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
-  , _upload_housekeeping(upload_hks) {
+  , _upload_housekeeping(upload_hks)
+  , _schema_registry(schema_registry) {
+    if (schema_registry) {
+        std::cerr << "jcipar 10. got active schema registry\n";
+    } else {
+        std::cerr << "jcipar 10. got null schema registry\n";
+    }
     // Construct cloud_storage read path (remote_partition)
     if (
       config::shard_local_cfg().cloud_storage_enabled()

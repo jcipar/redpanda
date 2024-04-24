@@ -4,6 +4,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/partition.h"
 #include "datalake/protobuf_to_arrow.h"
+#include "datalake/schema_registry_interface.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 
@@ -22,8 +23,7 @@
 #include <optional>
 #include <string_view>
 
-ss::future<datalake::arrow_writing_consumer::schema_info>
-get_schema(model::topic /* topic */) {
+ss::future<datalake::schema_info> get_schema(model::topic /* topic */) {
     // std::string_view topic_name = model::topic_view(topic);
     // pandaproxy::schema_registry::subject value_subject{
     //   std::string(topic_name) + "-value"};
@@ -40,7 +40,7 @@ get_schema(model::topic /* topic */) {
 
     // std::string value_schema_string = value_schema.schema.def().raw()();
 
-    co_return datalake::arrow_writing_consumer::schema_info{
+    co_return datalake::schema_info{
       .key_schema = R"schema(
           syntax = "proto2";
           package datalake.proto;
@@ -50,7 +50,7 @@ get_schema(model::topic /* topic */) {
             optional int32 number = 3;
           }
 
-          message value_message {
+          message twitter_record {
             optional string Topic = 1;
             optional string Sentiment = 2;
             optional uint64 TweetId = 3;
@@ -59,7 +59,7 @@ get_schema(model::topic /* topic */) {
           }
           )schema",
       // .key_schema = value_schema_string,
-      .key_message_name = "value_message",
+      .key_message_name = "twitter_record",
     };
 }
 
@@ -68,7 +68,14 @@ ss::future<bool> datalake::write_parquet(
   const std::filesystem::path inner_path,
   ss::shared_ptr<storage::log> log,
   model::offset starting_offset,
-  model::offset ending_offset) {
+  model::offset ending_offset,
+  std::shared_ptr<schema_registry_interface> schema_registry) {
+    if (schema_registry) {
+        std::cerr << "*** jcipar write_parquet Got active schema registry\n";
+    } else {
+        std::cerr << "*** jcipar write_parquet Got null schema registry\n";
+    }
+
     storage::log_reader_config reader_cfg(
       starting_offset,
       ending_offset,
@@ -88,7 +95,13 @@ ss::future<bool> datalake::write_parquet(
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
 
-    auto schema = co_await get_schema(topic);
+    // auto schema = co_await get_schema(topic);
+    auto schema = co_await schema_registry->get_raw_topic_schema(
+      std::string(topic_name));
+    schema.key_message_name = "twitter_record"; // FIXME jcipar
+    std::cerr << "jcipar got schema in arrow_writer\n"
+              << schema.key_schema << std::endl;
+    // schema = co_await get_schema(topic);
 
     arrow_writing_consumer consumer(schema);
     std::cerr << "*** Created consumer" << std::endl;
@@ -96,6 +109,7 @@ ss::future<bool> datalake::write_parquet(
       std::move(consumer), model::no_timeout);
     std::cerr << "*** Consumed log" << std::endl;
     if (table == nullptr) {
+        std::cerr << "*** jcipar log is null" << std::endl;
         co_return false;
     }
 
@@ -301,7 +315,9 @@ template<typename ArrowType>
 class get_arrow_value : public arrow::ScalarVisitor {};
 
 std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
+    std::cerr << "*** jcipar get_table" << std::endl;
     if (!_ok.ok()) {
+        std::cerr << "*** jcipar table is not ok" << std::endl;
         return nullptr;
     }
 
@@ -328,7 +344,7 @@ std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
     });
 
     // Create a table
-    return arrow::Table::Make(
+    auto result = arrow::Table::Make(
       schema,
       {key_chunks,
        value_chunks,
@@ -336,17 +352,24 @@ std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
        offset_chunks,
        structured_value_chunks},
       key_chunks->length());
+    if (result == nullptr) {
+        std::cerr << "*** jcipar failed to make table" << std::endl;
+    }
+    return result;
 }
 
 ss::future<std::shared_ptr<arrow::Table>>
 datalake::arrow_writing_consumer::end_of_stream() {
+    std::cerr << "*** jcipar end_of_stream" << std::endl;
     if (!_ok.ok()) {
+        std::cerr << "*** jcipar consume is not ok" << std::endl;
         co_return nullptr;
     }
     if (_key_vector.size() == 0 || _rows == 0) {
         // FIXME: use a different return type for this.
         // See the note in ntp_archiver_service::do_upload_segment when
         // calling write_parquet.
+        std::cerr << "*** jcipar no data" << std::endl;
         _ok = arrow::Status::UnknownError("No Data");
         co_return nullptr;
     }

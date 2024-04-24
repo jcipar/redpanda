@@ -20,6 +20,7 @@
 #include "cluster/types.h"
 #include "config/property.h"
 #include "container/intrusive_list_helpers.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/ktp.h"
@@ -47,7 +48,9 @@ public:
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
-      config::binding<std::chrono::milliseconds>);
+      config::binding<std::chrono::milliseconds>,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry
+      = nullptr);
 
     ~partition_manager();
 
@@ -289,6 +292,8 @@ private:
     std::optional<cluster::notification_id_type> _leader_notify_handle;
 
     state_machine_registry _stm_registry;
+
+    std::shared_ptr<datalake::schema_registry_interface> _schema_registry;
 
     friend std::ostream& operator<<(std::ostream&, const partition_manager&);
     friend std::ostream& operator<<(

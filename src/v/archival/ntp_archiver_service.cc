@@ -33,6 +33,7 @@
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
 #include "datalake/arrow_writer.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -203,7 +204,8 @@ ntp_archiver::ntp_archiver(
   cloud_storage::remote& remote,
   cloud_storage::cache& c,
   cluster::partition& parent,
-  ss::shared_ptr<cloud_storage::async_manifest_view> amv)
+  ss::shared_ptr<cloud_storage::async_manifest_view> amv,
+  std::shared_ptr<datalake::schema_registry_interface> schema_registry)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
@@ -232,7 +234,16 @@ ntp_archiver::ntp_archiver(
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
-  , _manifest_view(std::move(amv)) {
+  , _manifest_view(std::move(amv))
+  , _schema_registry(schema_registry) {
+    if (!_schema_registry) {
+        _schema_registry = parent._schema_registry;
+    }
+    if (_schema_registry) {
+        std::cerr << "jcipar 5. got active schema registry\n";
+    } else {
+        std::cerr << "jcipar 5. got null schema registry\n";
+    }
     _housekeeping_interval.watch([this] {
         _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>{
           _housekeeping_interval(), housekeeping_jit};
@@ -1208,7 +1219,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
           std::filesystem::path(path),
           _parent.log(),
           candidate.starting_offset,
-          candidate.final_offset);
+          candidate.final_offset,
+          _schema_registry);
 
         if (write_success) {
             cloud_storage::upload_result ret

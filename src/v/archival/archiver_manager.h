@@ -16,8 +16,11 @@
 #include "cluster/fwd.h"
 #include "cluster/partition_leaders_table.h"
 #include "container/fragmented_vector.h"
+#include "datalake/schema_registry_interface.h"
 
 #include <seastar/core/shared_ptr.hh>
+
+#include <memory>
 
 namespace archival {
 
@@ -37,7 +40,9 @@ public:
       ss::sharded<cloud_storage::remote>& api,
       ss::sharded<cloud_storage::cache>& cache,
       ss::sharded<archival::upload_housekeeping_service>& upload_housekeeping,
-      ss::lw_shared_ptr<const configuration> config);
+      ss::lw_shared_ptr<const configuration> config,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry
+      = nullptr);
     ~archiver_manager();
     ss::future<> start();
     ss::future<> stop();

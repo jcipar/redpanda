@@ -17,6 +17,7 @@
 #include "cluster/fwd.h"
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/fwd.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -42,7 +43,9 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<archival::upload_housekeeping_service>&,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
-      = std::nullopt);
+      = std::nullopt,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry
+      = nullptr);
 
     ~partition() = default;
 
@@ -378,6 +381,10 @@ private:
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
 
+public: // FIXME(jcipar)
+    std::shared_ptr<datalake::schema_registry_interface> _schema_registry;
+
+private:
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
 } // namespace cluster

@@ -18,6 +18,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "container/fragmented_vector.h"
+#include "datalake/schema_registry_interface.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -40,6 +41,7 @@
 #include <fmt/ostream.h>
 
 #include <exception>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -509,7 +511,8 @@ public:
       ss::lw_shared_ptr<const archival::configuration> config,
       cloud_storage::remote& remote,
       cloud_storage::cache& cache,
-      archival::upload_housekeeping_service& housekeeping)
+      archival::upload_housekeeping_service& housekeeping,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry)
       : _ntp(std::move(ntp))
       , _self_id(broker_id)
       , _part(std::move(part))
@@ -519,9 +522,13 @@ public:
       , _upload_housekeeping(housekeeping)
       , _rtc(_as)
       , _ctxlog(
-          archival_log,
-          _rtc,
-          ssx::sformat("{} node-{}", _ntp.path(), _self_id)) {
+          archival_log, _rtc, ssx::sformat("{} node-{}", _ntp.path(), _self_id))
+      , _schema_registry(schema_registry) {
+        if (schema_registry) {
+            std::cerr << "jcipar 1. got active schema registry\n";
+        } else {
+            std::cerr << "jcipar 1. got null schema registry\n";
+        }
         vlog(_ctxlog.debug, "created disposing managed_partition");
     }
 
@@ -574,7 +581,8 @@ private:
               _remote,
               _cache,
               *_part.get(),
-              manifest_view);
+              manifest_view,
+              _schema_registry);
 
             if (!ntp_config.is_read_replica_mode_enabled()) {
                 _upload_housekeeping.register_jobs(
@@ -680,6 +688,8 @@ private:
     std::optional<ss::future<>> _bg_operation;
     // barrier is used by stop method
     std::optional<ss::promise<>> _barrier;
+
+    std::shared_ptr<datalake::schema_registry_interface> _schema_registry;
 };
 
 struct managed_partition : public managed_partition_fsm::state_machine_t {
@@ -690,7 +700,8 @@ struct managed_partition : public managed_partition_fsm::state_machine_t {
       ss::lw_shared_ptr<const archival::configuration> config,
       cloud_storage::remote& remote,
       cloud_storage::cache& cache,
-      archival::upload_housekeeping_service& housekeeping)
+      archival::upload_housekeeping_service& housekeeping,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry)
       : managed_partition_fsm::state_machine_t(
         ntp,
         broker_id,
@@ -698,9 +709,16 @@ struct managed_partition : public managed_partition_fsm::state_machine_t {
         std::move(config),
         remote,
         cache,
-        housekeeping)
+        housekeeping,
+        schema_registry)
       , _ntp(ntp)
-      , _node_id(broker_id) {}
+      , _node_id(broker_id) {
+        if (schema_registry) {
+            std::cerr << "jcipar 2. got active schema registry\n";
+        } else {
+            std::cerr << "jcipar 2. got null schema registry\n";
+        }
+    }
 
     ~managed_partition() {
         auto st = current_state();
@@ -769,7 +787,9 @@ public:
       ss::sharded<cloud_storage::remote>& api,
       ss::sharded<cloud_storage::cache>& cache,
       ss::sharded<archival::upload_housekeeping_service>& upload_housekeeping,
-      ss::lw_shared_ptr<const configuration>& config)
+      ss::lw_shared_ptr<const configuration>& config,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry
+      = nullptr)
       : _self_node_id(node_id)
       , _pm(pm)
       , _gm(gm)
@@ -778,7 +798,13 @@ public:
       , _upload_housekeeping(upload_housekeeping)
       , _config(std::move(config))
       , _rtc(_as)
-      , _logger(archival_log, _rtc, ssx::sformat("node-{}", node_id)) {
+      , _logger(archival_log, _rtc, ssx::sformat("node-{}", node_id))
+      , _schema_registry(schema_registry) {
+        if (schema_registry) {
+            std::cerr << "jcipar 3. got active schema registry\n";
+        } else {
+            std::cerr << "jcipar 3. got null schema registry\n";
+        }
         vlog(_logger.info, "Create archiver_manager");
     }
 
@@ -884,7 +910,8 @@ public:
           _config,
           _remote.local(),
           _cache.local(),
-          _upload_housekeeping.local());
+          _upload_housekeeping.local(),
+          _schema_registry);
 
         vlog(
           _logger.info,
@@ -1011,6 +1038,8 @@ public:
     ss::abort_source _as;
     retry_chain_node _rtc;
     retry_chain_logger _logger;
+
+    std::shared_ptr<datalake::schema_registry_interface> _schema_registry;
 };
 
 archiver_manager::archiver_manager(
@@ -1020,9 +1049,23 @@ archiver_manager::archiver_manager(
   ss::sharded<cloud_storage::remote>& api,
   ss::sharded<cloud_storage::cache>& cache,
   ss::sharded<archival::upload_housekeeping_service>& upload_housekeeping,
-  ss::lw_shared_ptr<const configuration> config)
+  ss::lw_shared_ptr<const configuration> config,
+  std::shared_ptr<datalake::schema_registry_interface> schema_registry)
   : _impl(std::make_unique<impl>(
-    node_id, pm, gm, api, cache, upload_housekeeping, config)) {}
+    node_id,
+    pm,
+    gm,
+    api,
+    cache,
+    upload_housekeeping,
+    config,
+    schema_registry)) {
+    if (schema_registry) {
+        std::cerr << "jcipar 4. got active schema registry\n";
+    } else {
+        std::cerr << "jcipar 4. got null schema registry\n";
+    }
+}
 
 archiver_manager::~archiver_manager() {}
 

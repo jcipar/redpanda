@@ -185,6 +185,7 @@ private:
         assert(mutable_msg != nullptr);
 
         if (!mutable_msg->ParseFromString(message)) {
+            std::cerr << "jcipar failed ParseFromString" << std::endl;
             return nullptr;
         }
         return std::unique_ptr<google::protobuf::Message>(mutable_msg);
@@ -208,6 +209,7 @@ private:
 inline std::shared_ptr<arrow::ChunkedArray>
 table_to_chunked_struct_array(const std::shared_ptr<arrow::Table> table) {
     if (table->columns().size() == 0) {
+        std::cerr << "*** jcipar table has no columns" << std::endl;
         return nullptr;
     }
     int chunk_count = table->columns()[0]->num_chunks();
@@ -224,6 +226,7 @@ table_to_chunked_struct_array(const std::shared_ptr<arrow::Table> table) {
         // make builder
         auto unique_builder_result = arrow::MakeBuilder(type);
         if (!unique_builder_result.ok()) {
+            std::cerr << "*** jcipar could not make arrow builder" << std::endl;
             return nullptr;
         }
         std::shared_ptr<arrow::ArrayBuilder> builder
@@ -248,15 +251,20 @@ table_to_chunked_struct_array(const std::shared_ptr<arrow::Table> table) {
                 auto chunk = column->chunk(chunk_num);
                 auto scalar_result = chunk->GetScalar(row_num);
                 if (!scalar_result.ok()) {
+                    std::cerr << "*** jcipar scalar result is not ok"
+                              << std::endl;
                     return nullptr;
                 }
                 if (!child_builders[column_num]
                        ->AppendScalar(*scalar_result.ValueUnsafe())
                        .ok()) {
+                    std::cerr << "*** jcipar child builder is not ok"
+                              << std::endl;
                     return nullptr;
                 }
             }
             if (!struct_builder.Append().ok()) {
+                std::cerr << "*** jcipar struct builder is no ok" << std::endl;
                 return nullptr;
             }
         }
@@ -264,6 +272,7 @@ table_to_chunked_struct_array(const std::shared_ptr<arrow::Table> table) {
         // Finish the chunk
         auto struct_result = struct_builder.Finish();
         if (!struct_result.ok()) {
+            std::cerr << "*** jcipar struct result is not ok" << std::endl;
             return nullptr;
         }
         result_vector.push_back(struct_result.ValueUnsafe());

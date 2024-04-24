@@ -26,6 +26,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "crypto/ossl_context_service.h"
+#include "datalake/schema_registry_interface.h"
 #include "features/fwd.h"
 #include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
@@ -338,6 +339,8 @@ private:
     std::unique_ptr<cluster::tx_manager_migrator> _tx_manager_migrator;
 
     ss::sharded<ss::abort_source> _as;
+
+    std::shared_ptr<datalake::schema_registry_reader> _dl_schema_registry;
 };
 
 namespace debug {

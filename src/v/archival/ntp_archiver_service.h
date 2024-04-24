@@ -20,6 +20,7 @@
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cluster/fwd.h"
+#include "datalake/schema_registry_interface.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -117,7 +118,9 @@ public:
       cloud_storage::remote& remote,
       cloud_storage::cache& c,
       cluster::partition& parent,
-      ss::shared_ptr<cloud_storage::async_manifest_view> amv);
+      ss::shared_ptr<cloud_storage::async_manifest_view> amv,
+      std::shared_ptr<datalake::schema_registry_interface> schema_registry
+      = nullptr);
 
     /// Spawn background fibers, which depending on the mode (read replica or
     /// not) will either do uploads, or periodically read back the manifest.
@@ -664,6 +667,8 @@ private:
       _manifest_upload_interval;
 
     ss::shared_ptr<cloud_storage::async_manifest_view> _manifest_view;
+
+    std::shared_ptr<datalake::schema_registry_interface> _schema_registry;
 
     friend class archival_fixture;
 };
