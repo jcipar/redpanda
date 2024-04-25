@@ -23,46 +23,6 @@
 #include <optional>
 #include <string_view>
 
-ss::future<datalake::schema_info> get_schema(model::topic /* topic */) {
-    // std::string_view topic_name = model::topic_view(topic);
-    // pandaproxy::schema_registry::subject value_subject{
-    //   std::string(topic_name) + "-value"};
-
-    // std::unique_ptr<wasm::schema_registry> schema_registry
-    //   = wasm::schema_registry::make_default(nullptr);
-
-    // auto value_schema = co_await schema_registry->get_subject_schema(
-    //   value_subject, std::nullopt);
-
-    // assert(
-    //   value_schema.schema.type()
-    //   == pandaproxy::schema_registry::schema_type::protobuf);
-
-    // std::string value_schema_string = value_schema.schema.def().raw()();
-
-    co_return datalake::schema_info{
-      .key_schema = R"schema(
-          syntax = "proto2";
-          package datalake.proto;
-
-          message simple_message {
-            optional string label = 1;
-            optional int32 number = 3;
-          }
-
-          message twitter_record {
-            optional string Topic = 1;
-            optional string Sentiment = 2;
-            optional uint64 TweetId = 3;
-            optional string TweetText = 4;
-            optional string TweetDate = 5;
-          }
-          )schema",
-      // .key_schema = value_schema_string,
-      .key_message_name = "twitter_record",
-    };
-}
-
 ss::future<bool> datalake::write_parquet(
   model::topic topic,
   const std::filesystem::path inner_path,
@@ -70,12 +30,6 @@ ss::future<bool> datalake::write_parquet(
   model::offset starting_offset,
   model::offset ending_offset,
   std::shared_ptr<schema_registry_interface> schema_registry) {
-    if (schema_registry) {
-        std::cerr << "*** jcipar write_parquet Got active schema registry\n";
-    } else {
-        std::cerr << "*** jcipar write_parquet Got null schema registry\n";
-    }
-
     storage::log_reader_config reader_cfg(
       starting_offset,
       ending_offset,
@@ -95,21 +49,14 @@ ss::future<bool> datalake::write_parquet(
     std::filesystem::path path = std::filesystem::path("/tmp/parquet_files")
                                  / topic_name / inner_path;
 
-    // auto schema = co_await get_schema(topic);
     auto schema = co_await schema_registry->get_raw_topic_schema(
       std::string(topic_name));
     schema.key_message_name = "twitter_record"; // FIXME jcipar
-    std::cerr << "jcipar got schema in arrow_writer\n"
-              << schema.key_schema << std::endl;
-    // schema = co_await get_schema(topic);
 
     arrow_writing_consumer consumer(schema);
-    std::cerr << "*** Created consumer" << std::endl;
     std::shared_ptr<arrow::Table> table = co_await reader.consume(
       std::move(consumer), model::no_timeout);
-    std::cerr << "*** Consumed log" << std::endl;
     if (table == nullptr) {
-        std::cerr << "*** jcipar log is null" << std::endl;
         co_return false;
     }
 
@@ -123,7 +70,6 @@ ss::future<bool> datalake::write_parquet(
           return write_table_to_parquet(table, path);
       });
     co_await thread_worker.stop();
-    std::cerr << "*** Wrote parquet" << std::endl;
     co_return result.ok();
 }
 
@@ -315,9 +261,7 @@ template<typename ArrowType>
 class get_arrow_value : public arrow::ScalarVisitor {};
 
 std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
-    std::cerr << "*** jcipar get_table" << std::endl;
     if (!_ok.ok()) {
-        std::cerr << "*** jcipar table is not ok" << std::endl;
         return nullptr;
     }
 
@@ -352,24 +296,18 @@ std::shared_ptr<arrow::Table> datalake::arrow_writing_consumer::get_table() {
        offset_chunks,
        structured_value_chunks},
       key_chunks->length());
-    if (result == nullptr) {
-        std::cerr << "*** jcipar failed to make table" << std::endl;
-    }
     return result;
 }
 
 ss::future<std::shared_ptr<arrow::Table>>
 datalake::arrow_writing_consumer::end_of_stream() {
-    std::cerr << "*** jcipar end_of_stream" << std::endl;
     if (!_ok.ok()) {
-        std::cerr << "*** jcipar consume is not ok" << std::endl;
         co_return nullptr;
     }
     if (_key_vector.size() == 0 || _rows == 0) {
         // FIXME: use a different return type for this.
         // See the note in ntp_archiver_service::do_upload_segment when
         // calling write_parquet.
-        std::cerr << "*** jcipar no data" << std::endl;
         _ok = arrow::Status::UnknownError("No Data");
         co_return nullptr;
     }

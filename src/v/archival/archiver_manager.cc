@@ -524,11 +524,6 @@ public:
       , _ctxlog(
           archival_log, _rtc, ssx::sformat("{} node-{}", _ntp.path(), _self_id))
       , _schema_registry(schema_registry) {
-        if (schema_registry) {
-            std::cerr << "jcipar 1. got active schema registry\n";
-        } else {
-            std::cerr << "jcipar 1. got null schema registry\n";
-        }
         vlog(_ctxlog.debug, "created disposing managed_partition");
     }
 
@@ -712,13 +707,7 @@ struct managed_partition : public managed_partition_fsm::state_machine_t {
         housekeeping,
         schema_registry)
       , _ntp(ntp)
-      , _node_id(broker_id) {
-        if (schema_registry) {
-            std::cerr << "jcipar 2. got active schema registry\n";
-        } else {
-            std::cerr << "jcipar 2. got null schema registry\n";
-        }
-    }
+      , _node_id(broker_id) {}
 
     ~managed_partition() {
         auto st = current_state();
@@ -800,11 +789,6 @@ public:
       , _rtc(_as)
       , _logger(archival_log, _rtc, ssx::sformat("node-{}", node_id))
       , _schema_registry(schema_registry) {
-        if (schema_registry) {
-            std::cerr << "jcipar 3. got active schema registry\n";
-        } else {
-            std::cerr << "jcipar 3. got null schema registry\n";
-        }
         vlog(_logger.info, "Create archiver_manager");
     }
 
@@ -1059,13 +1043,7 @@ archiver_manager::archiver_manager(
     cache,
     upload_housekeeping,
     config,
-    schema_registry)) {
-    if (schema_registry) {
-        std::cerr << "jcipar 4. got active schema registry\n";
-    } else {
-        std::cerr << "jcipar 4. got null schema registry\n";
-    }
-}
+    schema_registry)) {}
 
 archiver_manager::~archiver_manager() {}
 

@@ -239,11 +239,7 @@ ntp_archiver::ntp_archiver(
     if (!_schema_registry) {
         _schema_registry = parent._schema_registry;
     }
-    if (_schema_registry) {
-        std::cerr << "jcipar 5. got active schema registry\n";
-    } else {
-        std::cerr << "jcipar 5. got null schema registry\n";
-    }
+
     _housekeeping_interval.watch([this] {
         _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>{
           _housekeeping_interval(), housekeeping_jit};
