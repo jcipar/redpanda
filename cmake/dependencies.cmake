@@ -127,6 +127,32 @@ FetchContent_Declare(
   SYSTEM
   SOURCE_SUBDIR crates/c-api)
 
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
+set(ARROW_PARQUET ON)
+set(ARROW_CSV ON)
+set(ARROW_THRIFT OFF)
+set(ARROW_BUILD_STATIC ON)
+# fetch_dep(arrow
+#   REPO https://github.com/apache/arrow
+#   TAG apache-arrow-16.1.0
+#   SOURCE_SUBDIR cpp)
+
+
+find_package(boost)
+find_package(Boost REQUIRED COMPONENTS headers)
+
+FetchContent_Declare(
+  arrow
+  GIT_REPOSITORY https://github.com/apache/arrow
+  GIT_TAG apache-arrow-16.1.0
+  GIT_SHALLOW ON
+  GIT_SUBMODULES ""
+  GIT_PROGRESS TRUE
+  USES_TERMINAL_DOWNLOAD TRUE
+  OVERRIDE_FIND_PACKAGE
+  SYSTEM
+  SOURCE_SUBDIR cpp)
+
 FetchContent_MakeAvailable(
     absl
     fmt

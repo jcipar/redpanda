@@ -1,6 +1,5 @@
 #pragma once
 
-#pragma once
 #include <arrow/api.h>
 #include <google/protobuf/message.h>
 
