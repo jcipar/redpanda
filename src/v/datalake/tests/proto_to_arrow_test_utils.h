@@ -56,6 +56,17 @@ message nested_message {
 }
 )schema");
 
+    // Includes maps and repeated elements
+    std::string map_repeated_schema = (R"schema(
+syntax = "proto2";
+package datalake.proto;
+
+message map_repeated_message {
+  repeated string labels = 3;
+  map<string, int32> label_map = 4;
+}
+    )schema");
+
     std::string combined_schema = (R"schema(
 syntax = "proto2";
 package datalake.proto;
@@ -80,6 +91,11 @@ message nested_message {
   optional string label = 1;
   optional int32 number = 2;
   optional inner_message_t inner_message = 3;
+}
+
+message map_repeated_message {
+  repeated string labels = 3;
+  map<string, int32> label_map = 4;
 }
 )schema");
 
@@ -227,6 +243,36 @@ generate_nested_message(const std::string& label, int32_t number) {
                   reflection->SetInt32(message, field_desc, number);
               } else if (field_desc->name() == "inner_message") {
                   reflection->SetAllocatedMessage(message, inner, field_desc);
+              }
+          }
+      });
+}
+
+inline std::string
+generate_map_repeated_message(const std::vector<std::string>& labels) {
+    test_data test_data;
+    test_message_builder builder(test_data);
+    return builder.generate_message_generic(
+      "map_repeated_message", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          for (int field_idx = 0;
+               field_idx < message->GetDescriptor()->field_count();
+               field_idx++) {
+              auto field_desc = message->GetDescriptor()->field(field_idx);
+              if (field_desc->name() == "labels") {
+                  for (const auto& label : labels) {
+                      reflection->AddString(message, field_desc, label);
+                  }
+              } else if (field_desc->name() == "label_map") {
+                  /* https://stackoverflow.com/questions/71995707/how-to-use-reflection-of-protobuf-to-modify-a-map
+                   */
+                  // TODO: I don't believe there's a specific reflection API
+                  // for modifying maps. Under the hood, maps are implmeneted
+                  // as a repeated field of MapEntry structs.
+                  // for (int i = 0; i < labels.size(); i++) {
+                  //     reflection->Map(
+                  //       message, field_desc, i, labels[i]);
+                  // }
               }
           }
       });

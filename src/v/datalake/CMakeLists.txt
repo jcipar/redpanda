@@ -7,6 +7,7 @@ v_cc_library(
   NAME datalake
   SRCS
     protobuf_to_arrow_converter.cc
+    schemaless_arrow_converter.cc
   DEPS
     v::storage
     v::model

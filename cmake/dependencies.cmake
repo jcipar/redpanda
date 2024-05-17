@@ -132,10 +132,6 @@ set(ARROW_PARQUET ON)
 set(ARROW_CSV ON)
 set(ARROW_THRIFT OFF)
 set(ARROW_BUILD_STATIC ON)
-# fetch_dep(arrow
-#   REPO https://github.com/apache/arrow
-#   TAG apache-arrow-16.1.0
-#   SOURCE_SUBDIR cpp)
 
 
 find_package(boost)
@@ -152,6 +148,7 @@ FetchContent_Declare(
   OVERRIDE_FIND_PACKAGE
   SYSTEM
   SOURCE_SUBDIR cpp)
+
 
 FetchContent_MakeAvailable(
     absl

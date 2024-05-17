@@ -1,4 +1,5 @@
 #pragma once
+#include "datalake/arrow_converter_interface.h"
 #include "datalake/errors.h"
 #include "datalake/proto_to_arrow_interface.h"
 #include "datalake/proto_to_arrow_scalar.h"
@@ -26,6 +27,7 @@
 
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 namespace datalake {
 
@@ -35,20 +37,16 @@ This class deserializes protobuf messages and passes the deserialized messages
 to an instance of proto_to_arrow_struct to recursively parse the structured
 message.
 */
-class proto_to_arrow_converter {
+class proto_to_arrow_converter : public arrow_converter_interface {
 public:
-    proto_to_arrow_converter(std::string schema);
+    explicit proto_to_arrow_converter(std::string schema);
 
-    [[nodiscard]] arrow_converter_status
-    add_message(const std::string& serialized_message);
+    [[nodiscard]] virtual arrow_converter_status
+    add_message(const std::string& serialized_message) override;
 
-    [[nodiscard]] arrow_converter_status finish_batch();
-
-    std::shared_ptr<arrow::Table> build_table();
-
-    std::vector<std::shared_ptr<arrow::Field>> build_field_vec();
-
-    std::shared_ptr<arrow::Schema> build_schema();
+    [[nodiscard]] virtual arrow_converter_status finish_batch() override;
+    std::shared_ptr<arrow::Table> virtual build_table() override;
+    std::shared_ptr<arrow::Schema> virtual build_schema() override;
 
 private:
     FRIEND_TEST(ArrowWriter, EmptyMessageTest);
@@ -56,8 +54,8 @@ private:
     FRIEND_TEST(ArrowWriter, NestedMessageTest);
 
     void initialize_protobuf_schema(const std::string& schema);
-
     bool initialize_struct_converter();
+    std::vector<std::shared_ptr<arrow::Field>> build_field_vec();
 
     /// Parse the message to a protobuf message.
     /// Return nullptr on error.
