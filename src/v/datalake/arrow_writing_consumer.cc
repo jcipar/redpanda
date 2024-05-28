@@ -2,8 +2,11 @@
 
 #include "datalake/protobuf_to_arrow_converter.h"
 
+#include <seastar/core/file-types.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/seastar.hh>
+#include <seastar/util/later.hh>
 
 #include <arrow/array/builder_binary.h>
 #include <arrow/io/file.h>
@@ -282,14 +285,20 @@ optional string str_110 = 220;
     std::shared_ptr<parquet::ArrowWriterProperties> arrow_props
       = parquet::ArrowWriterProperties::Builder().store_schema()->build();
 
-    auto outfile_result = arrow::io::FileOutputStream::Open(_local_file_path);
+    {
+      // auto outfile_result =
+      // arrow::io::FileOutputStream::Open(_local_file_path);
 
-    if (!outfile_result.ok()) {
-        _ok = outfile_result.status();
-        return;
+      // if (!outfile_result.ok()) {
+      //     _ok = outfile_result.status();
+      //     return;
+      // }
+      // std::shared_ptr<arrow::io::FileOutputStream> outfile
+      //   = outfile_result.ValueUnsafe();
+    } {
+        auto output_buffer_result = arrow::io::BufferOutputStream::Create();
+        _output_buffer = std::move(output_buffer_result.ValueUnsafe());
     }
-    std::shared_ptr<arrow::io::FileOutputStream> outfile
-      = outfile_result.ValueUnsafe();
 
     // // std::shared_ptr<arrow::io::BufferOutputStream> outfile;
     // std::shared_ptr<arrow::io::MockOutputStream> outfile;
@@ -297,7 +306,7 @@ optional string str_110 = 220;
     auto file_writer_result = parquet::arrow::FileWriter::Open(
       *_schema.get(),
       arrow::default_memory_pool(),
-      outfile,
+      _output_buffer, // outfile
       props,
       arrow_props);
 
@@ -360,8 +369,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
           return ss::stop_iteration::no;
       });
     if (!_ok.ok()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
+        co_return ss::stop_iteration::yes;
     }
 
     std::shared_ptr<arrow::Array> key_array;
@@ -374,8 +382,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     // correct return type.
     _ok = key_builder_result.status();
     if (!_ok.ok()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
+        co_return ss::stop_iteration::yes;
     } else {
         key_array = std::move(key_builder_result).ValueUnsafe();
     }
@@ -383,8 +390,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     auto&& value_builder_result = value_builder.Finish();
     _ok = value_builder_result.status();
     if (!_ok.ok()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
+        co_return ss::stop_iteration::yes;
     } else {
         value_array = std::move(value_builder_result).ValueUnsafe();
     }
@@ -392,8 +398,7 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     auto&& timestamp_builder_result = timestamp_builder.Finish();
     _ok = timestamp_builder_result.status();
     if (!_ok.ok()) {
-        return ss::make_ready_future<ss::stop_iteration>(
-          ss::stop_iteration::yes);
+        co_return ss::stop_iteration::yes;
     } else {
         timestamp_array = std::move(timestamp_builder_result).ValueUnsafe();
     }
@@ -403,13 +408,14 @@ datalake::arrow_writing_consumer::operator()(model::record_batch batch) {
     _timestamp_vector.push_back(timestamp_array);
 
     if (_unwritten_row_count > _row_group_size) {
+        co_await ss::maybe_yield();
         if (!write_row_group()) {
-            return ss::make_ready_future<ss::stop_iteration>(
-              ss::stop_iteration::yes);
+            co_return ss::stop_iteration::yes;
         }
+        co_await ss::maybe_yield();
     }
 
-    return ss::make_ready_future<ss::stop_iteration>(ss::stop_iteration::no);
+    co_return ss::stop_iteration::no;
 }
 
 ss::future<arrow::Status> datalake::arrow_writing_consumer::end_of_stream() {
@@ -419,8 +425,29 @@ ss::future<arrow::Status> datalake::arrow_writing_consumer::end_of_stream() {
     write_row_group();
 
     auto close_result = _file_writer->Close();
+
     if (!close_result.ok()) {
         _ok = close_result;
+    }
+
+    {
+        // write the buffer
+        auto buffer_result = _output_buffer->Finish();
+        auto buffer = buffer_result.ValueUnsafe();
+        std::cerr << "*** jcipar output buffer contains " << buffer->size()
+                  << "bytes\n";
+        ss::file file = co_await ss::open_file_dma(
+          _local_file_path.string(),
+          ss::open_flags::create | ss::open_flags::truncate
+            | ss::open_flags::wo);
+        auto output_stream = co_await ss::make_file_output_stream(file);
+        co_await output_stream.write((char*)buffer->data(), buffer->size());
+        co_await output_stream.close();
+        try {
+            // co_await file.close();
+        } catch (...) {
+            std::cerr << "*** jcipar closing the file failed\n";
+        }
     }
 
     co_return _ok;

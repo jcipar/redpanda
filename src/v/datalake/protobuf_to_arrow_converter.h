@@ -37,7 +37,6 @@ public:
     void finish_batch();
 
     std::shared_ptr<arrow::Table> build_table();
-    void clear();
 
     std::vector<std::shared_ptr<arrow::Field>> build_field_vec();
 

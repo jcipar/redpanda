@@ -16,6 +16,8 @@
 #include <parquet/arrow/writer.h>
 #include <ssx/thread_worker.h>
 
+#include <memory>
+
 namespace datalake {
 class arrow_writing_consumer {
     /** Consumes logs and writes the results out to a Parquet file.
@@ -51,6 +53,7 @@ private:
     arrow::ArrayVector _timestamp_vector;
 
     // File writing
+    std::shared_ptr<arrow::io::BufferOutputStream> _output_buffer;
     std::unique_ptr<parquet::arrow::FileWriter> _file_writer;
 
     std::unique_ptr<proto_to_arrow_converter> _table_builder;
