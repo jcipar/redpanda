@@ -28,8 +28,19 @@ void proto_to_arrow_scalar<arrow::Int32Type>::do_add(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return;
     }
-    _arrow_status = _builder->Append(
-      msg->GetReflection()->GetInt32(*msg, desc));
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            const auto val = msg->GetReflection()->GetRepeatedInt32(
+              *msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+    } else {
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetInt32(*msg, desc));
+    }
 }
 
 template<>
@@ -41,8 +52,19 @@ void proto_to_arrow_scalar<arrow::Int64Type>::do_add(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return;
     }
-    _arrow_status = _builder->Append(
-      msg->GetReflection()->GetInt64(*msg, desc));
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            const auto val = msg->GetReflection()->GetRepeatedInt64(
+              *msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+    } else {
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetInt64(*msg, desc));
+    }
 }
 
 template<>
@@ -54,7 +76,19 @@ void proto_to_arrow_scalar<arrow::BooleanType>::do_add(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return;
     }
-    _arrow_status = _builder->Append(msg->GetReflection()->GetBool(*msg, desc));
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            const auto val = msg->GetReflection()->GetRepeatedBool(
+              *msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+    } else {
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetBool(*msg, desc));
+    }
 }
 
 template<>
@@ -66,8 +100,19 @@ void proto_to_arrow_scalar<arrow::FloatType>::do_add(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return;
     }
-    _arrow_status = _builder->Append(
-      msg->GetReflection()->GetFloat(*msg, desc));
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            const auto val = msg->GetReflection()->GetRepeatedFloat(
+              *msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+    } else {
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetFloat(*msg, desc));
+    }
 }
 
 template<>
@@ -79,8 +124,19 @@ void proto_to_arrow_scalar<arrow::DoubleType>::do_add(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return;
     }
-    _arrow_status = _builder->Append(
-      msg->GetReflection()->GetDouble(*msg, desc));
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            const auto val = msg->GetReflection()->GetRepeatedDouble(
+              *msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+    } else {
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetDouble(*msg, desc));
+    }
 }
 
 template<>
@@ -92,8 +148,19 @@ void proto_to_arrow_scalar<arrow::StringType>::do_add(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return;
     }
-    _arrow_status = _builder->Append(
-      msg->GetReflection()->GetString(*msg, desc));
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            const auto val = msg->GetReflection()->GetRepeatedString(
+              *msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                break;
+            }
+        }
+    } else {
+        _arrow_status = _builder->Append(
+          msg->GetReflection()->GetString(*msg, desc));
+    }
 }
 
 } // namespace datalake::detail

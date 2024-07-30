@@ -66,6 +66,15 @@ message inner_message_t {
 
 )schema");
 
+    std::string repeated_schema = (R"schema(
+syntax = "proto2";
+package datalake.proto;
+
+message repeated_field {
+  repeated int32 numbers = 1;
+}
+    )schema");
+
     std::string combined_schema = (R"schema(
 syntax = "proto2";
 package datalake.proto;
@@ -90,6 +99,10 @@ message nested_message {
   optional string label = 1;
   optional int32 number = 2;
   optional inner_message_t inner_message = 3;
+}
+
+message repeated_field {
+  repeated int32 numbers = 1;
 }
 )schema");
 
@@ -238,6 +251,25 @@ generate_nested_message(const std::string& label, int32_t number) {
               } else if (field_desc->name() == "inner_message") {
                   reflection->SetAllocatedMessage(message, inner, field_desc);
               }
+          }
+      });
+}
+
+inline std::string
+generate_repeated_field_message(std::vector<std::int32_t> numbers) {
+    test_data test_data;
+    test_message_builder builder(test_data);
+    return builder.generate_message_generic(
+      "repeated_field", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          // Have to use field indices here because
+          // message->GetReflections()->ListFields() only returns fields
+          // that are actually present in the message;
+          assert(message->GetDescriptor()->field_count() == 1);
+          auto field_desc = message->GetDescriptor()->field(0);
+          assert(field_desc->name() == "numbers");
+          for (const auto num : numbers) {
+              reflection->AddInt32(message, field_desc, num);
           }
       });
 }
