@@ -7,6 +7,7 @@ v_cc_library(
   NAME datalake
   SRCS
     protobuf_to_arrow_converter.cc
+    proto_to_arrow_repeated.cc
     proto_to_arrow_scalar.cc
     proto_to_arrow_struct.cc
   DEPS

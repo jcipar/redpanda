@@ -183,4 +183,41 @@ TEST(ArrowWriter, NestedMessageTest) {
       "-12345,\n        -1,\n        -2,\n        -3,\n        -4,\n        "
       "-5\n      ]\n  ]\n");
 }
+
+TEST(ArrowWriter, RepeatedFeildTest) {
+    using namespace datalake;
+    test_data test_data;
+    std::string schema = test_data.repeated_schema;
+
+    proto_to_arrow_converter converter(schema);
+
+    std::string serialized_message = generate_repeated_field_message(
+      {1, 1, 2, 3, 5, 8, 13});
+
+    auto parsed_message = converter.parse_message(serialized_message);
+    EXPECT_NE(parsed_message, nullptr);
+    EXPECT_EQ(parsed_message->GetTypeName(), "datalake.proto.repeated_field");
+    EXPECT_EQ(
+      parsed_message->DebugString(),
+      "numbers: 1\nnumbers: 1\nnumbers: 2\nnumbers: 3\nnumbers: 5\nnumbers: "
+      "8\nnumbers: 13\n");
+
+    EXPECT_EQ(
+      arrow_converter_status::ok, converter.add_message(serialized_message));
+    EXPECT_EQ(
+      arrow_converter_status::ok,
+      converter.add_message(generate_repeated_field_message({2, 4, 6, 8})));
+    EXPECT_EQ(arrow_converter_status::ok, converter.finish_batch());
+
+    auto table_schema = converter.build_schema();
+    auto table = converter.build_table();
+    EXPECT_EQ(
+      table_schema->field_names(), std::vector<std::string>({"numbers"}));
+    EXPECT_EQ(
+      table->ToString(),
+      "numbers: list<item: int32>\n  child 0, item: int32\n----\nnumbers:\n  "
+      "[\n    [\n      [\n        1,\n        1,\n        2,\n        3,\n     "
+      "   5,\n        8,\n        13\n      ],\n      [\n        2,\n        "
+      "4,\n        6,\n        8\n      ]\n    ]\n  ]\n");
+}
 } // namespace datalake

@@ -11,6 +11,7 @@
 
 #include <arrow/api.h>
 #include <arrow/array/array_base.h>
+#include <arrow/status.h>
 #include <arrow/type_fwd.h>
 
 #include <memory>
@@ -57,8 +58,9 @@ public:
     /// Builder
     virtual std::shared_ptr<arrow::ArrayBuilder> builder() = 0;
 
+    virtual arrow::Status finish_batch() = 0;
+
     // Methods with defaults
-    virtual arrow::Status finish_batch() { return arrow::Status::OK(); }
     std::shared_ptr<arrow::ChunkedArray> finish() {
         return std::make_shared<arrow::ChunkedArray>(std::move(_values));
     }

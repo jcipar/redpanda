@@ -11,13 +11,16 @@
 
 #include "datalake/errors.h"
 #include "datalake/proto_to_arrow_interface.h"
-#include "datalake/proto_to_arrow_scalar.h"
+
+#include <google/protobuf/descriptor.h>
+#include <google/protobuf/type.pb.h>
 
 #include <memory>
 #include <stdexcept>
 
 namespace google::protobuf {
 class Descriptor;
+class FieldDescriptor;
 }
 
 namespace datalake::detail {
@@ -49,5 +52,8 @@ private:
     std::shared_ptr<arrow::StructBuilder> _builder;
     arrow::FieldVector _fields;
 };
+
+std::unique_ptr<proto_to_arrow_interface> make_converter(
+  const google::protobuf::FieldDescriptor* desc, bool ignore_repeated = false);
 
 } // namespace datalake::detail

@@ -53,6 +53,7 @@ private:
     FRIEND_TEST(ArrowWriter, SimpleMessageTest);
     FRIEND_TEST(ArrowWriter, NestedMessageTest);
     FRIEND_TEST(ArrowWriter, InvalidMessagetest);
+    FRIEND_TEST(ArrowWriter, RepeatedFeildTest);
 
     void initialize_protobuf_schema(const ss::sstring& schema);
 

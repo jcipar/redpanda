@@ -10,6 +10,8 @@
 #include "datalake/proto_to_arrow_struct.h"
 
 #include "datalake/logger.h"
+#include "datalake/proto_to_arrow_repeated.h"
+#include "datalake/proto_to_arrow_scalar.h"
 
 #include <arrow/status.h>
 #include <fmt/format.h>
@@ -61,13 +63,24 @@ arrow::Status datalake::detail::proto_to_arrow_struct::add_child_value(
         _arrow_status = arrow::Status::Invalid("Invalid protobuf field index");
         return _arrow_status;
     }
-    auto child_message = &msg->GetReflection()->GetMessage(*msg, desc);
-    return add_struct_message(child_message);
+    if (desc->is_repeated()) {
+        for (int i = 0; i < msg->GetReflection()->FieldSize(*msg, desc); i++) {
+            auto val = &msg->GetReflection()->GetRepeatedMessage(*msg, desc, i);
+            _arrow_status = _builder->Append(val);
+            if (!_arrow_status.ok()) {
+                return _arrow_status;
+            }
+        }
+    } else {
+        auto child_message = &msg->GetReflection()->GetMessage(*msg, desc);
+        _arrow_status = add_struct_message(child_message);
+    }
+    return _arrow_status;
 }
+
 datalake::detail::proto_to_arrow_struct::proto_to_arrow_struct(
   const google::protobuf::Descriptor* message_descriptor) {
     using namespace detail;
-    namespace pb = google::protobuf;
 
     // Set up child arrays
     _child_converters.reserve(message_descriptor->field_count());
@@ -81,49 +94,13 @@ datalake::detail::proto_to_arrow_struct::proto_to_arrow_struct(
             throw datalake::initialization_error(
               "Invalid protobuf field index");
         }
-        switch (desc->cpp_type()) {
-        case pb::FieldDescriptor::CPPTYPE_INT32:
-            _child_converters.push_back(
-              std::make_unique<proto_to_arrow_scalar<arrow::Int32Type>>());
-            break;
-        case pb::FieldDescriptor::CPPTYPE_INT64:
-            _child_converters.push_back(
-              std::make_unique<proto_to_arrow_scalar<arrow::Int64Type>>());
-            break;
-        case pb::FieldDescriptor::CPPTYPE_BOOL:
-            _child_converters.push_back(
-              std::make_unique<proto_to_arrow_scalar<arrow::BooleanType>>());
-            break;
-        case pb::FieldDescriptor::CPPTYPE_FLOAT:
-            _child_converters.push_back(
-              std::make_unique<proto_to_arrow_scalar<arrow::FloatType>>());
-            break;
-        case pb::FieldDescriptor::CPPTYPE_DOUBLE:
-            _child_converters.push_back(
-              std::make_unique<proto_to_arrow_scalar<arrow::DoubleType>>());
-            break;
-        case pb::FieldDescriptor::CPPTYPE_STRING:
-            _child_converters.push_back(
-              std::make_unique<proto_to_arrow_scalar<arrow::StringType>>());
-            break;
-        case pb::FieldDescriptor::CPPTYPE_MESSAGE: {
-            auto field_message_descriptor = desc->message_type();
-            if (field_message_descriptor == nullptr) {
-                _arrow_status = arrow::Status::Invalid(
-                  "Invalid protobuf field index");
-                throw datalake::initialization_error(fmt::format(
-                  "Can't find schema for nested type : {}",
-                  desc->cpp_type_name()));
-            }
-            _child_converters.push_back(std::make_unique<proto_to_arrow_struct>(
-              field_message_descriptor));
-        } break;
-        case pb::FieldDescriptor::CPPTYPE_ENUM:   // TODO
-        case pb::FieldDescriptor::CPPTYPE_UINT32: // not supported by Iceberg
-        case pb::FieldDescriptor::CPPTYPE_UINT64: // not supported by Iceberg
-            throw datalake::initialization_error(
-              fmt::format("Unknown type: {}", desc->cpp_type_name()));
+        auto converter = make_converter(desc);
+        if (!converter) {
+            throw datalake::initialization_error(fmt::format(
+              "Unable to create protobuf converter for type: {}",
+              desc->cpp_type_name()));
         }
+        _child_converters.push_back(std::move(converter));
     }
     // Make Arrow data types
 
@@ -139,6 +116,12 @@ datalake::detail::proto_to_arrow_struct::proto_to_arrow_struct(
               "Invalid protobuf field index");
             throw datalake::initialization_error(
               "Invalid protobuf field index");
+        }
+        auto child_field = _child_converters[field_idx]->field(
+          field_desc->name());
+        if (!child_field) {
+            throw datalake::initialization_error(
+              "Invalid protobuf child field");
         }
         _fields.push_back(
           _child_converters[field_idx]->field(field_desc->name()));
@@ -164,4 +147,51 @@ datalake::detail::proto_to_arrow_struct::field(const std::string& name) {
 }
 arrow::FieldVector datalake::detail::proto_to_arrow_struct::get_field_vector() {
     return _fields;
+}
+
+std::unique_ptr<datalake::detail::proto_to_arrow_interface>
+datalake::detail::make_converter(
+  const google::protobuf::FieldDescriptor* desc, bool ignore_repeated) {
+    if (!desc) {
+        // TODO logging and error codes
+        return nullptr;
+    }
+    switch (desc->cpp_type()) {
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
+        if (desc->is_repeated() && !ignore_repeated) {
+            return std::make_unique<proto_to_arrow_repeated>(desc);
+        } else {
+            return std::make_unique<proto_to_arrow_scalar<arrow::Int32Type>>();
+        }
+        break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_INT64:
+        return std::make_unique<proto_to_arrow_scalar<arrow::Int64Type>>();
+        break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_BOOL:
+        return std::make_unique<proto_to_arrow_scalar<arrow::BooleanType>>();
+        break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_FLOAT:
+        return std::make_unique<proto_to_arrow_scalar<arrow::FloatType>>();
+        break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_DOUBLE:
+        return std::make_unique<proto_to_arrow_scalar<arrow::DoubleType>>();
+        break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_STRING:
+        return std::make_unique<proto_to_arrow_scalar<arrow::StringType>>();
+        break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE: {
+        auto field_message_descriptor = desc->message_type();
+        if (field_message_descriptor == nullptr) {
+            return nullptr;
+        }
+        return std::make_unique<proto_to_arrow_struct>(
+          field_message_descriptor);
+    } break;
+    case google::protobuf::FieldDescriptor::CPPTYPE_ENUM:   // TODO
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT32: // not supported by
+                                                            // Iceberg
+    case google::protobuf::FieldDescriptor::CPPTYPE_UINT64: // not supported by
+                                                            // Iceberg
+        return nullptr;
+    }
 }
