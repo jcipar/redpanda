@@ -18,6 +18,7 @@
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/io/tokenizer.h>
+#include <gtest/gtest_prod.h>
 
 #include <memory>
 #include <stdexcept>
@@ -54,6 +55,7 @@ private:
     FRIEND_TEST(ArrowWriter, NestedMessageTest);
     FRIEND_TEST(ArrowWriter, InvalidMessagetest);
     FRIEND_TEST(ArrowWriter, RepeatedFeildTest);
+    FRIEND_TEST(ArrowWriter, MapFieldTest);
 
     void initialize_protobuf_schema(const ss::sstring& schema);
 

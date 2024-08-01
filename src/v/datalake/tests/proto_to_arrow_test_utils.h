@@ -75,6 +75,15 @@ message repeated_field {
 }
     )schema");
 
+    std::string map_schema = (R"schema(
+syntax = "proto2";
+package datalake.proto;
+
+message map_field {
+  map<string, int32> keys_values = 1;
+}
+    )schema");
+
     std::string combined_schema = (R"schema(
 syntax = "proto2";
 package datalake.proto;
@@ -104,6 +113,12 @@ message nested_message {
 message repeated_field {
   repeated int32 numbers = 1;
 }
+
+message map_field {
+  map<string, int32> keys_values = 1;
+}
+
+
 )schema");
 
     std::string test_message_name = "simple_message";
@@ -223,7 +238,6 @@ inline google::protobuf::Message* generate_inner_message(
               }
           }
       });
-
     return ret;
 }
 
@@ -270,6 +284,27 @@ generate_repeated_field_message(std::vector<std::int32_t> numbers) {
           assert(field_desc->name() == "numbers");
           for (const auto num : numbers) {
               reflection->AddInt32(message, field_desc, num);
+          }
+      });
+}
+
+inline std::string generate_map_field_message(
+  std::unordered_map<std::string, std::int32_t> keys_values) {
+    test_data test_data;
+    test_message_builder builder(test_data);
+    return builder.generate_message_generic(
+      "map_field", [&](google::protobuf::Message* message) {
+          auto reflection = message->GetReflection();
+          // Have to use field indices here because
+          // message->GetReflections()->ListFields() only returns fields
+          // that are actually present in the message;
+          assert(message->GetDescriptor()->field_count() == 1);
+          auto field_desc = message->GetDescriptor()->field(0);
+          assert(field_desc->name() == "keys_values");
+          for (const auto& [key, value] : keys_values) {
+              // The inner message used above is the same key-value format
+              auto inner = generate_inner_message(builder, key, value);
+              reflection->AddAllocatedMessage(message, field_desc, inner);
           }
       });
 }

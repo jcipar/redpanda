@@ -10,6 +10,7 @@
 #include "datalake/proto_to_arrow_struct.h"
 
 #include "datalake/logger.h"
+#include "datalake/proto_to_arrow_map.h"
 #include "datalake/proto_to_arrow_repeated.h"
 #include "datalake/proto_to_arrow_scalar.h"
 
@@ -17,6 +18,8 @@
 #include <fmt/format.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/message.h>
+
+#include <memory>
 
 arrow::Status datalake::detail::proto_to_arrow_struct::finish_batch() {
     if (!_arrow_status.ok()) {
@@ -156,9 +159,14 @@ datalake::detail::make_converter(
         // TODO logging and error codes
         return nullptr;
     }
+    if (desc->is_map()) {
+        std::cerr << "WHOAH! It's a map. They should have sent a poet.\n";
+        return std::make_unique<proto_to_arrow_map>(desc);
+    }
     switch (desc->cpp_type()) {
     case google::protobuf::FieldDescriptor::CPPTYPE_INT32:
         if (desc->is_repeated() && !ignore_repeated) {
+            // FIXME: do this for other types too.
             return std::make_unique<proto_to_arrow_repeated>(desc);
         } else {
             return std::make_unique<proto_to_arrow_scalar<arrow::Int32Type>>();

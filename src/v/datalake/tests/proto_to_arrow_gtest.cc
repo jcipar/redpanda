@@ -220,4 +220,50 @@ TEST(ArrowWriter, RepeatedFeildTest) {
       "   5,\n        8,\n        13\n      ],\n      [\n        2,\n        "
       "4,\n        6,\n        8\n      ]\n    ]\n  ]\n");
 }
+
+TEST(ArrowWriter, MapFieldTest) {
+    using namespace datalake;
+    test_data test_data;
+    std::string schema = test_data.map_schema;
+
+    proto_to_arrow_converter converter(schema);
+    std::string serialized_message = generate_map_field_message({
+      {"one", 1},
+      {"two", 2},
+      {"three", 3},
+      {"five", 5},
+      {"eight", 8},
+    });
+
+    std::cerr << "Map Message: \"" << serialized_message << "\"\n";
+    auto parsed_message = converter.parse_message(serialized_message);
+
+    EXPECT_NE(parsed_message, nullptr);
+    EXPECT_EQ(parsed_message->GetTypeName(), "datalake.proto.map_field");
+    EXPECT_EQ(
+      parsed_message->DebugString(),
+      "keys_values {\n  key: \"eight\"\n  value: 8\n}\nkeys_values {\n  key: "
+      "\"five\"\n  value: 5\n}\nkeys_values {\n  key: \"one\"\n  value: "
+      "1\n}\nkeys_values {\n  key: \"three\"\n  value: 3\n}\nkeys_values {\n  "
+      "key: \"two\"\n  value: 2\n}\n");
+
+    EXPECT_EQ(
+      arrow_converter_status::ok, converter.add_message(serialized_message));
+    EXPECT_EQ(arrow_converter_status::ok, converter.finish_batch());
+
+    auto table_schema = converter.build_schema();
+    auto table = converter.build_table();
+    EXPECT_EQ(
+      table_schema->field_names(), std::vector<std::string>({"keys_values"}));
+    EXPECT_EQ(
+      table->ToString(),
+      "keys_values: map<string, int32>\n  child 0, entries: struct<key: string "
+      "not null, value: int32> not null\n      child 0, key: string not null\n "
+      "     child 1, value: int32\n----\nkeys_values:\n  [\n    [\n      "
+      "keys:\n      [\n        \"eight\",\n        \"three\",\n        "
+      "\"two\",\n        \"five\",\n        \"one\"\n      ]\n      values:\n  "
+      "    [\n        8,\n        3,\n        2,\n        5,\n        1\n      "
+      "]\n    ]\n  ]\n");
+}
+
 } // namespace datalake

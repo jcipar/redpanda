@@ -59,6 +59,7 @@ arrow::Status proto_to_arrow_repeated::add_child_value(
 
 std::shared_ptr<arrow::Field>
 proto_to_arrow_repeated::field(const std::string& name) {
+    // FIXME: type
     std::shared_ptr<arrow::DataType> arrow_type = arrow::list(arrow::int32());
     return arrow::field(name, arrow_type);
 };
