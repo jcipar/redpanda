@@ -41,3 +41,19 @@ rp_test(
   LABELS storage
   ARGS "-- -c 1"
 )
+
+rp_test(
+  GTEST
+  BINARY_NAME parquet_writer_test
+  SOURCES parquet_writer_test.cc
+  LIBRARIES
+    v::application
+    v::features
+    v::gtest_main
+    v::kafka_test_utils
+    v::datalake
+    v::model_test_utils
+    v::iceberg_test_utils
+  LABELS storage
+  ARGS "-- -c 1"
+)
