@@ -9,6 +9,7 @@
  */
 #include "datalake/parquet_writer.h"
 
+#include "bytes/iobuf.h"
 #include "datalake/data_writer_interface.h"
 
 #include <arrow/array/array_base.h>
@@ -50,13 +51,17 @@ public:
     //// METHODS SPECIFIC TO IOBUF OUTPUT STREAM ////
     iobuf take_iobuf();
 
+    size_t current_size_bytes();
+
 private:
     iobuf _current_iobuf;
     bool _closed = false;
     int64_t _position = 0;
 };
 
-arrow_to_iobuf::arrow_to_iobuf(const arrow::Schema& schema) {
+arrow_to_iobuf::arrow_to_iobuf(std::shared_ptr<arrow::Schema> schema)
+  : _schema(schema) // Hold a pointer to schema so it isn't deallocated
+{
     // TODO: make the compression algorithm configurable.
     std::shared_ptr<parquet::WriterProperties> writer_props
       = parquet::WriterProperties::Builder()
@@ -70,7 +75,7 @@ arrow_to_iobuf::arrow_to_iobuf(const arrow::Schema& schema) {
     _outfile = std::make_shared<iobuf_output_stream>();
 
     auto writer_result = parquet::arrow::FileWriter::Open(
-      schema,
+      *_schema,
       arrow::default_memory_pool(),
       _outfile,
       writer_props,
@@ -83,8 +88,10 @@ arrow_to_iobuf::arrow_to_iobuf(const arrow::Schema& schema) {
 }
 
 void arrow_to_iobuf::add_arrow_array(std::shared_ptr<arrow::Array> data) {
+    if (data->length() == 0) {
+        return;
+    }
     arrow::ArrayVector data_av = {data};
-
     std::shared_ptr<arrow::ChunkedArray> chunked_data
       = std::make_shared<arrow::ChunkedArray>(std::move(data_av));
     auto table_result = arrow::Table::FromChunkedStructArray(chunked_data);
@@ -111,6 +118,10 @@ iobuf arrow_to_iobuf::close_and_take_iobuf() {
     return take_iobuf();
 }
 
+size_t arrow_to_iobuf::current_size_bytes() {
+    return _outfile->current_size_bytes();
+}
+
 arrow::Status iobuf_output_stream::Close() {
     _closed = true;
     return arrow::Status::OK();
@@ -127,5 +138,9 @@ arrow::Status iobuf_output_stream::Write(const void* data, int64_t nbytes) {
     return arrow::Status::OK();
 }
 iobuf iobuf_output_stream::take_iobuf() { return std::move(_current_iobuf); }
+
+size_t iobuf_output_stream::current_size_bytes() {
+    return _current_iobuf.size_bytes();
+}
 
 } // namespace datalake
