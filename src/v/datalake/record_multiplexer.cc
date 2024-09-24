@@ -10,6 +10,12 @@
 #include "datalake/record_multiplexer.h"
 
 #include "datalake/data_writer_interface.h"
+#include "datalake/schemaless_translator.h"
+#include "iceberg/datatypes.h"
+#include "iceberg/partition.h"
+#include "iceberg/partition_key.h"
+#include "iceberg/struct_accessor.h"
+#include "iceberg/transform.h"
 #include "iceberg/values.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
@@ -17,8 +23,7 @@
 namespace datalake {
 record_multiplexer::record_multiplexer(
   std::unique_ptr<data_writer_factory> writer_factory)
-  : _translator{schemaless_translator()}
-  , _writer_factory{std::move(writer_factory)} {}
+  : _writer_factory{std::move(writer_factory)} {}
 
 ss::future<ss::stop_iteration>
 record_multiplexer::operator()(model::record_batch batch) {
@@ -45,9 +50,12 @@ record_multiplexer::operator()(model::record_batch batch) {
                 std::move(key), std::move(val), timestamp, offset);
           },
           translator);
+        auto schema = std::visit(
+          [](schemaless_translator& tr) { return tr.get_schema(); },
+          translator);
 
         // Send it to the writer
-        auto& writer = get_writer();
+        auto& writer = get_writer(get_partition(schema, data));
         writer.add_data_struct(std::move(data), estimated_size);
     });
     co_return ss::stop_iteration::no;
@@ -55,28 +63,53 @@ record_multiplexer::operator()(model::record_batch batch) {
 
 ss::future<chunked_vector<data_writer_result>>
 record_multiplexer::end_of_stream() {
-    // TODO: once we have multiple _writers this should be a loop
-    if (_writer) {
-        chunked_vector<data_writer_result> ret;
-        data_writer_result res = _writer->finish();
+    chunked_vector<data_writer_result> ret;
+
+    for (auto& [partition, writer] : _writers) {
+        data_writer_result res = writer->finish();
         ret.push_back(res);
-        co_return ret;
-    } else {
-        co_return chunked_vector<data_writer_result>{};
     }
+    co_return ret;
 }
 
 record_multiplexer::translator& record_multiplexer::get_translator() {
-    return _translator;
+    if (!_translators.contains(0)) {
+        _translators.emplace(0, schemaless_translator());
+    }
+    return _translators.at(0);
 }
 
-data_writer& record_multiplexer::get_writer() {
-    if (!_writer) {
+data_writer&
+record_multiplexer::get_writer(const iceberg::partition_key& partition) {
+    if (!_writers.contains(partition)) {
         auto schema = std::visit(
           [](schemaless_translator& tr) { return tr.get_schema(); },
-          _translator);
-        _writer = _writer_factory->create_writer(std::move(schema));
+          get_translator());
+        _writers[partition.copy()] = _writer_factory->create_writer(
+          std::move(schema));
     }
-    return *_writer;
+    return *_writers.at(partition);
 }
+
+// Currently only supports partitioning by hour on the column
+// "redpanda_timestamp" (2)
+iceberg::partition_key record_multiplexer::get_partition(
+  const iceberg::struct_type& schema, const iceberg::struct_value& data) {
+    auto accessors = iceberg::struct_accessor::from_struct_type(schema);
+    iceberg::partition_spec partition_spec;
+    partition_spec.spec_id = iceberg::partition_spec::id_t{0};
+    partition_spec.fields.emplace_back(iceberg::partition_field{
+      .source_id = iceberg::nested_field::id_t{2},      // redpanda_timestamp
+      .field_id = iceberg::partition_field::id_t{1000}, // IDK???
+      .name = "hour",
+      .transform = iceberg::hour_transform{}}
+
+    );
+    // std::cerr << "Partition for " << data << "\n";
+    auto partition = iceberg::partition_key::create(
+      data, accessors, partition_spec);
+    // std::cerr << "Partition: " << partition.val << "\n";
+    return partition;
+}
+
 } // namespace datalake

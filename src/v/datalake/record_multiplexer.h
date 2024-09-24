@@ -11,6 +11,9 @@
 
 #include "datalake/data_writer_interface.h"
 #include "datalake/schemaless_translator.h"
+#include "iceberg/datatypes.h"
+#include "iceberg/partition_key.h"
+#include "iceberg/values.h"
 #include "model/record.h"
 
 #include <seastar/core/future.hh>
@@ -31,7 +34,7 @@ pseudocode:
 for each record {
     t = get_translator(record.schema_id);
     d = t.translate(record);
-    w = get_data_writer(record.schema_id);
+    w = get_data_writer(record.schema_id, record.partition);
     w.record(d);
 }
 */
@@ -46,14 +49,19 @@ private:
     using translator = std::variant<schemaless_translator>;
 
     translator& get_translator();
-    data_writer& get_writer();
+    data_writer& get_writer(const iceberg::partition_key& partition);
 
     // TODO: in a future PR this will be a map of translators keyed by schema_id
-    translator _translator;
-    std::unique_ptr<data_writer_factory> _writer_factory;
+    std::unordered_map<int32_t, translator> _translators;
 
     // TODO: similarly this will be a map keyed by schema_id
-    std::unique_ptr<data_writer> _writer;
+    std::unique_ptr<data_writer_factory> _writer_factory;
+    std::unordered_map<iceberg::partition_key, std::unique_ptr<data_writer>>
+      _writers;
+
+    // Currently we only support partitioning by hour
+    iceberg::partition_key get_partition(
+      const iceberg::struct_type& schema, const iceberg::struct_value& data);
 };
 
 } // namespace datalake

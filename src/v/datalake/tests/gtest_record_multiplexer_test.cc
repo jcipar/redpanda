@@ -10,6 +10,7 @@
 #include "datalake/record_multiplexer.h"
 #include "datalake/tests/test_data_writer.h"
 #include "model/tests/random_batch.h"
+#include "model/timestamp.h"
 
 #include <gtest/gtest.h>
 
@@ -23,8 +24,15 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     model::test::record_batch_spec batch_spec;
     batch_spec.records = record_count;
     batch_spec.count = batch_count;
+    batch_spec.timestamp = model::timestamp{1};
     ss::circular_buffer<model::record_batch> batches
       = model::test::make_random_batches(batch_spec).get0();
+
+    batch_spec.timestamp = model::timestamp{60 * 60}; // 1 hour later.
+    auto more_batches = model::test::make_random_batches(batch_spec).get0();
+    for (auto& b : more_batches) {
+        batches.push_back(std::move(b));
+    }
 
     auto reader = model::make_generating_record_batch_reader(
       [batches = std::move(batches)]() mutable {
@@ -35,6 +43,8 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
     auto result
       = reader.consume(std::move(multiplexer), model::no_timeout).get0();
 
-    ASSERT_EQ(result.size(), 1);
-    EXPECT_EQ(result[0].row_count, record_count * batch_count);
+    ASSERT_EQ(result.size(), 2);
+    for (const auto& r : result) {
+        EXPECT_EQ(r.row_count, record_count * batch_count);
+    }
 }

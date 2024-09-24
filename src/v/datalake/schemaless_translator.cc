@@ -20,7 +20,8 @@ iceberg::struct_value schemaless_translator::translate_event(
     using namespace iceberg;
     struct_value res;
     res.fields.emplace_back(long_value(offset));
-    res.fields.emplace_back(timestamp_value(timestamp));
+    // Redpanda timestamps are milliseconds, Iceberg timestamps are microseconds
+    res.fields.emplace_back(timestamp_value(timestamp * 1000));
     res.fields.emplace_back(string_value(std::move(key)));
     res.fields.emplace_back(string_value(std::move(value)));
     return res;
