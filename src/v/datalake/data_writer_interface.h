@@ -9,6 +9,8 @@
  */
 #include "datalake/schemaless_translator.h"
 #include "iceberg/datatypes.h"
+#include "iceberg/manifest_entry.h"
+#include "iceberg/partition_key.h"
 #include "iceberg/values.h"
 
 #include <cstddef>
@@ -17,8 +19,10 @@
 #pragma once
 
 namespace datalake {
-struct data_writer_result {
-    size_t row_count = 0;
+struct data_writer_file {
+    ss::sstring file_path;
+    size_t record_count = 0;
+    size_t file_size_bytes = 0;
 };
 
 class data_writer {
@@ -30,7 +34,7 @@ public:
       iceberg::struct_value /* data */, int64_t /* approx_size */)
       = 0;
 
-    virtual data_writer_result finish() = 0;
+    virtual data_writer_file finish() = 0;
 };
 
 class data_writer_factory {

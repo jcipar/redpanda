@@ -45,6 +45,6 @@ TEST(DatalakeMultiplexerTest, TestMultiplexer) {
 
     ASSERT_EQ(result.size(), 2);
     for (const auto& r : result) {
-        EXPECT_EQ(r.row_count, record_count * batch_count);
+        EXPECT_EQ(r.file.record_count, record_count * batch_count);
     }
 }

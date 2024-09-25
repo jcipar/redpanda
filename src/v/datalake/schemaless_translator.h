@@ -17,11 +17,23 @@
 #include <utility>
 
 namespace datalake {
-class schemaless_translator {
+
+class record_translator {
+public:
+    virtual ~record_translator() = default;
+
+    virtual iceberg::struct_value translate_event(
+      iobuf key, iobuf value, int64_t timestamp, int64_t offset) const
+      = 0;
+
+    virtual iceberg::struct_type get_schema() const = 0;
+};
+
+class schemaless_translator : public record_translator {
 public:
     iceberg::struct_value translate_event(
-      iobuf key, iobuf value, int64_t timestamp, int64_t offset) const;
+      iobuf key, iobuf value, int64_t timestamp, int64_t offset) const override;
 
-    iceberg::struct_type get_schema() const;
+    iceberg::struct_type get_schema() const override;
 };
 } // namespace datalake

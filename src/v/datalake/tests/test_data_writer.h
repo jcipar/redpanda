@@ -27,15 +27,15 @@ public:
 
     bool add_data_struct(
       iceberg::struct_value /* data */, int64_t /* approx_size */) override {
-        _result.row_count++;
+        _result.record_count++;
         return false;
     }
 
-    data_writer_result finish() override { return _result; }
+    data_writer_file finish() override { return _result; }
 
 private:
     iceberg::struct_type _schema;
-    data_writer_result _result;
+    data_writer_file _result;
 };
 class test_data_writer_factory : public data_writer_factory {
 public:

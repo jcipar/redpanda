@@ -19,6 +19,7 @@
 #include "iceberg/values.h"
 #include "model/record.h"
 #include "storage/parser_utils.h"
+#include <seastar/core/shared_ptr.hh>
 
 namespace datalake {
 record_multiplexer::record_multiplexer(
@@ -40,19 +41,14 @@ record_multiplexer::operator()(model::record_batch batch) {
                             * 1000;
         int64_t offset = static_cast<int64_t>(batch.base_offset())
                          + record.offset_delta();
+        // Bytes for key, value, and 2 int64 for offset and timestamp.
         int64_t estimated_size = key.size_bytes() + val.size_bytes() + 16;
 
         // Translate the record
-        auto& translator = get_translator();
-        iceberg::struct_value data = std::visit(
-          [&key, &val, timestamp, offset](schemaless_translator& tr) {
-              return tr.translate_event(
-                std::move(key), std::move(val), timestamp, offset);
-          },
-          translator);
-        auto schema = std::visit(
-          [](schemaless_translator& tr) { return tr.get_schema(); },
-          translator);
+        auto translator = get_translator();
+        iceberg::struct_value data = translator->translate_event(
+          std::move(key), std::move(val), timestamp, offset);
+        auto schema = translator->get_schema();
 
         // Send it to the writer
         auto& writer = get_writer(get_partition(schema, data));
@@ -66,15 +62,18 @@ record_multiplexer::end_of_stream() {
     chunked_vector<data_writer_result> ret;
 
     for (auto& [partition, writer] : _writers) {
-        data_writer_result res = writer->finish();
-        ret.push_back(res);
+        data_writer_file file = writer->finish();
+        data_writer_result res;
+        res.file = file;
+        res.partition = partition.copy();
+        ret.push_back(std::move(res));
     }
     co_return ret;
 }
 
-record_multiplexer::translator& record_multiplexer::get_translator() {
+ss::shared_ptr<record_translator> record_multiplexer::get_translator() {
     if (!_translators.contains(0)) {
-        _translators.emplace(0, schemaless_translator());
+        _translators.emplace(0, ss::make_shared<schemaless_translator>());
     }
     return _translators.at(0);
 }
@@ -82,9 +81,7 @@ record_multiplexer::translator& record_multiplexer::get_translator() {
 data_writer&
 record_multiplexer::get_writer(const iceberg::partition_key& partition) {
     if (!_writers.contains(partition)) {
-        auto schema = std::visit(
-          [](schemaless_translator& tr) { return tr.get_schema(); },
-          get_translator());
+        auto schema = get_translator()->get_schema();
         _writers[partition.copy()] = _writer_factory->create_writer(
           std::move(schema));
     }

@@ -22,6 +22,11 @@
 
 namespace datalake {
 
+struct data_writer_result {
+  data_writer_file file;
+  iceberg::partition_key partition;
+};
+
 /*
 Consumes logs and sends records to the appropriate translator
 based on the schema ID. This is meant to be called with a
@@ -46,13 +51,12 @@ public:
     ss::future<chunked_vector<data_writer_result>> end_of_stream();
 
 private:
-    using translator = std::variant<schemaless_translator>;
 
-    translator& get_translator();
+    ss::shared_ptr<record_translator> get_translator();
     data_writer& get_writer(const iceberg::partition_key& partition);
 
     // TODO: in a future PR this will be a map of translators keyed by schema_id
-    std::unordered_map<int32_t, translator> _translators;
+    std::unordered_map<int32_t, ss::shared_ptr<record_translator>> _translators;
 
     // TODO: similarly this will be a map keyed by schema_id
     std::unique_ptr<data_writer_factory> _writer_factory;

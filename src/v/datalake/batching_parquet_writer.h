@@ -10,6 +10,7 @@
 
 #pragma once
 #include "datalake/arrow_translator.h"
+#include "datalake/data_writer_interface.h"
 #include "datalake/parquet_writer.h"
 #include "iceberg/datatypes.h"
 
@@ -45,7 +46,7 @@ public:
     // TODO: error type?
     ss::future<> add_data_struct(iceberg::value data, int64_t approx_size);
 
-    ss::future<data_writer_result> finish();
+    ss::future<data_writer_file> finish();
 
 private:
     ss::future<> write_row_group();
@@ -63,6 +64,7 @@ private:
     // Output
     ss::file _output_file;
     ss::output_stream<char> _output_stream;
+    data_writer_file _data_writer_result;
 };
 
 } // namespace datalake

@@ -58,16 +58,14 @@ ss::future<void> batching_parquet_writer::add_data_struct(
     }
 }
 
-ss::future<data_writer_result> batching_parquet_writer::finish() {
-    // TODO: fill in result structure
-    data_writer_result res;
+ss::future<data_writer_file> batching_parquet_writer::finish() {
     co_await write_row_group();
 
     iobuf out = _arrow_to_iobuf.close_and_take_iobuf();
     co_await write_iobuf_to_output_stream(std::move(out), _output_stream);
     co_await _output_stream.close();
 
-    co_return res;
+    co_return _data_writer_result;
 }
 
 ss::future<> batching_parquet_writer::write_row_group() {
@@ -76,12 +74,12 @@ ss::future<> batching_parquet_writer::write_row_group() {
         co_return;
     }
     auto chunk = _iceberg_to_arrow.take_chunk();
-    co_await ss::maybe_yield();
+    _data_writer_result.record_count += _row_count;
     _row_count = 0;
     _byte_count = 0;
     _arrow_to_iobuf.add_arrow_array(chunk);
-    co_await ss::maybe_yield();
     iobuf out = _arrow_to_iobuf.take_iobuf();
+    _data_writer_result.file_size_bytes += out.size_bytes();
     co_await write_iobuf_to_output_stream(std::move(out), _output_stream);
 }
 
